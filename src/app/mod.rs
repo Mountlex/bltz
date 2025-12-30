@@ -24,7 +24,7 @@ use crate::contacts::ContactsDb;
 use crate::credentials::CredentialStore;
 use crate::input::KeyBindings;
 use crate::mail::{folder_cache_key, group_into_threads};
-use crate::ui::app::AppState;
+use crate::ui::app::{AppState, ConnectionState, FolderState, PaginationState, PolishState, StatusState, ThreadState};
 
 use self::undo::{PendingDeletion, UndoEntry};
 
@@ -92,19 +92,37 @@ impl App {
 
         let state = AppState {
             emails,
-            threads,
+            thread: ThreadState {
+                threads,
+                ..Default::default()
+            },
             total_count,
             unread_count,
-            loading: true, // Actor is connecting
+            status: StatusState {
+                loading: true, // Actor is connecting
+                ..Default::default()
+            },
             split_ratio: config.ui.split_ratio.clamp(30, 70),
-            account_name,
-            account_index: accounts.active_index(),
-            account_names,
-            connected: false, // Will be set true on Connected event
-            emails_loaded,
-            all_emails_loaded: emails_loaded < EMAIL_PAGE_SIZE,
-            current_folder: default_folder,
-            ai_polish_enabled: config.ai.is_enabled() && config.ai.enable_polish,
+            connection: ConnectionState {
+                account_name,
+                account_index: accounts.active_index(),
+                account_names,
+                connected: false, // Will be set true on Connected event
+                ..Default::default()
+            },
+            pagination: PaginationState {
+                emails_loaded,
+                all_loaded: emails_loaded < EMAIL_PAGE_SIZE,
+                ..Default::default()
+            },
+            folder: FolderState {
+                current: default_folder,
+                ..Default::default()
+            },
+            polish: PolishState {
+                enabled: config.ai.is_enabled() && config.ai.enable_polish,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -203,17 +221,17 @@ impl App {
     pub(crate) async fn execute_search(&mut self) {
         use crate::mail::folder_cache_key;
 
-        if self.state.search_query.is_empty() {
+        if self.state.search.query.is_empty() {
             self.state.update_search_cache_hybrid(HashSet::new());
             return;
         }
 
-        let cache_key = folder_cache_key(self.account_id(), &self.state.current_folder);
+        let cache_key = folder_cache_key(self.account_id(), &self.state.folder.current);
 
         // Run async body FTS search
         let body_matches = self
             .cache
-            .search_body_fts(&cache_key, &self.state.search_query)
+            .search_body_fts(&cache_key, &self.state.search.query)
             .await
             .unwrap_or_default();
 
@@ -249,20 +267,20 @@ impl App {
 
         // Update state for the new account
         let account = self.accounts.active();
-        self.state.account_name = account.display_name().to_string();
-        self.state.account_index = self.accounts.active_index();
-        self.state.connected = account.connected;
+        self.state.connection.account_name = account.display_name().to_string();
+        self.state.connection.account_index = self.accounts.active_index();
+        self.state.connection.connected = account.connected;
 
         // Reload from cache FIRST to avoid visual flash
         // This loads new emails before we clear the selection state
         self.reload_from_cache().await;
 
         // Now clear state that wasn't overwritten by reload
-        self.state.current_body = None;
-        self.state.expanded_threads.clear();
-        self.state.selected_thread = 0;
-        self.state.selected_in_thread = 0;
-        self.state.reader_scroll = 0;
+        self.state.reader.body = None;
+        self.state.thread.expanded.clear();
+        self.state.thread.selected = 0;
+        self.state.thread.selected_in_thread = 0;
+        self.state.reader.scroll = 0;
         self.state.clear_search();
         self.in_flight_fetches.clear();
         self.last_prefetch_uid = None;
@@ -273,7 +291,7 @@ impl App {
 
         // Update status
         self.state
-            .set_status(format!("Switched to {}", self.state.account_name));
+            .set_status(format!("Switched to {}", self.state.connection.account_name));
 
         // Go back to inbox view
         self.state.view = View::Inbox;
@@ -296,14 +314,14 @@ impl App {
         use crate::ui::app::OtherAccountInfo;
 
         let active_index = self.accounts.active_index();
-        self.state.other_accounts.clear();
+        self.state.connection.other_accounts.clear();
 
         for (index, handle) in self.accounts.iter_enumerated() {
             if index == active_index {
                 continue; // Skip the active account
             }
 
-            self.state.other_accounts.push(OtherAccountInfo {
+            self.state.connection.other_accounts.push(OtherAccountInfo {
                 name: handle.short_name(),
                 has_new_mail: handle.has_new_mail,
                 new_count: handle.unread_since_viewed,

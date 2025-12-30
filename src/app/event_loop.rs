@@ -44,7 +44,7 @@ impl App {
             }
 
             // Handle input (adaptive timeout: faster when loading or pending prefetch)
-            let poll_timeout = if self.state.loading || self.pending_prefetch.is_some() {
+            let poll_timeout = if self.state.status.loading || self.pending_prefetch.is_some() {
                 50
             } else {
                 150
@@ -94,14 +94,14 @@ impl App {
                         account_event.account_index
                     );
                     if is_active {
-                        self.state.connected = true;
+                        self.state.connection.connected = true;
                         self.state.set_status("Connected");
                         self.state.clear_error();
                     }
                 }
                 ImapEvent::SyncStarted => {
                     if is_active {
-                        self.state.loading = true;
+                        self.state.status.loading = true;
                         self.state.set_status("Syncing...");
                     }
                 }
@@ -119,8 +119,8 @@ impl App {
                     );
 
                     if is_active {
-                        self.state.loading = false;
-                        self.state.last_sync = Some(chrono::Utc::now().timestamp());
+                        self.state.status.loading = false;
+                        self.state.connection.last_sync = Some(chrono::Utc::now().timestamp());
                         self.reload_from_cache().await;
                         tracing::debug!(
                             "After reload: {} emails in state",
@@ -143,7 +143,7 @@ impl App {
                         self.state.clear_error();
 
                         // After first successful INBOX sync, prefetch common folders
-                        if !self.prefetch_done && self.state.current_folder == "INBOX" {
+                        if !self.prefetch_done && self.state.folder.current == "INBOX" {
                             self.prefetch_done = true;
                             self.schedule_folder_prefetch();
                         }
@@ -177,15 +177,15 @@ impl App {
                         // Update body for both Reader and Inbox preview
                         match &self.state.view {
                             View::Reader { uid: viewing_uid } if *viewing_uid == uid => {
-                                self.state.current_body = Some(body);
-                                self.state.loading = false;
+                                self.state.reader.body = Some(body);
+                                self.state.status.loading = false;
                                 self.state.clear_error();
                             }
                             View::Inbox => {
                                 // For inbox preview, check if this is the currently selected email
                                 if let Some(email) = self.state.current_email_from_thread() {
                                     if email.uid == uid {
-                                        self.state.current_body = Some(body);
+                                        self.state.reader.body = Some(body);
                                     }
                                 }
                             }
@@ -200,7 +200,7 @@ impl App {
 
                         if let View::Reader { uid: viewing_uid } = self.state.view {
                             if viewing_uid == uid {
-                                self.state.loading = false;
+                                self.state.status.loading = false;
                                 self.state
                                     .set_error(format!("Failed to fetch email: {}", error));
                             }
@@ -215,7 +215,7 @@ impl App {
                             email.flags = flags;
                         }
                         // Update thread unread counts (threads now use indices, not clones)
-                        for thread in self.state.threads.iter_mut() {
+                        for thread in self.state.thread.threads.iter_mut() {
                             if thread
                                 .email_indices
                                 .iter()
@@ -237,7 +237,7 @@ impl App {
                             self.state.unread_count = count;
                         }
                         // Clear status/error to confirm success
-                        self.state.status.clear();
+                        self.state.status.message.clear();
                         self.state.clear_error();
                     }
                 }
@@ -258,31 +258,32 @@ impl App {
                 }
                 ImapEvent::FolderList { folders } => {
                     if is_active {
-                        self.state.folders = folders;
-                        self.state.loading = false;
+                        self.state.folder.list = folders;
+                        self.state.status.loading = false;
                         // Set INBOX as default if not set
-                        if self.state.current_folder.is_empty() {
-                            self.state.current_folder = "INBOX".to_string();
+                        if self.state.folder.current.is_empty() {
+                            self.state.folder.current = "INBOX".to_string();
                         }
                         // Auto-open folder picker if it was pending
-                        if self.state.folder_picker_pending {
-                            self.state.folder_picker_pending = false;
+                        if self.state.folder.picker_pending {
+                            self.state.folder.picker_pending = false;
                             self.state.modal = ModalState::FolderPicker;
                             // Set selection to current folder
                             if let Some(idx) = self
                                 .state
-                                .folders
+                                .folder
+                                .list
                                 .iter()
-                                .position(|f| f == &self.state.current_folder)
+                                .position(|f| f == &self.state.folder.current)
                             {
-                                self.state.folder_selected = idx;
+                                self.state.folder.selected = idx;
                             }
                         }
                     }
                 }
                 ImapEvent::FolderSelected { folder } => {
                     if is_active {
-                        self.state.current_folder = folder.clone();
+                        self.state.folder.current = folder.clone();
                         self.state.set_status(format!("Switched to {}", folder));
                         // Trigger sync for the new folder
                         self.accounts
@@ -298,8 +299,8 @@ impl App {
                 }
                 ImapEvent::Error(e) => {
                     if is_active {
-                        self.state.loading = false;
-                        self.state.connected = false;
+                        self.state.status.loading = false;
+                        self.state.connection.connected = false;
                         self.state.set_error(e);
                     }
                 }
@@ -322,17 +323,17 @@ impl App {
         while let Ok(event) = ai.event_rx.try_recv() {
             match event {
                 AiEvent::EmailSummary { uid, summary } => {
-                    self.state.summary_loading = false;
-                    self.state.cached_summary = Some((uid, summary));
+                    self.state.reader.summary_loading = false;
+                    self.state.reader.cached_summary = Some((uid, summary));
                     self.state.set_status("Summary ready");
                 }
                 AiEvent::ThreadSummary { thread_id, summary } => {
-                    self.state.summary_loading = false;
-                    self.state.cached_thread_summary = Some((thread_id, summary));
+                    self.state.reader.summary_loading = false;
+                    self.state.reader.cached_thread_summary = Some((thread_id, summary));
                     self.state.set_status("Thread summary ready");
                 }
                 AiEvent::Polished { original, polished } => {
-                    self.state.polish_preview = Some(PolishPreview {
+                    self.state.polish.preview = Some(PolishPreview {
                         original,
                         polished,
                         loading: false,
@@ -341,8 +342,8 @@ impl App {
                         .set_status("Polish ready - Enter to accept, Esc to reject");
                 }
                 AiEvent::Error(e) => {
-                    self.state.summary_loading = false;
-                    if let Some(ref mut preview) = self.state.polish_preview {
+                    self.state.reader.summary_loading = false;
+                    if let Some(ref mut preview) = self.state.polish.preview {
                         preview.loading = false;
                     }
                     self.state.set_error(e);
@@ -353,7 +354,7 @@ impl App {
 
     /// Get the folder-specific cache key for the current account and folder
     pub(crate) fn cache_key(&self) -> String {
-        folder_cache_key(self.account_id(), &self.state.current_folder)
+        folder_cache_key(self.account_id(), &self.state.folder.current)
     }
 
     /// Reload state from cache (resets to first page using keyset pagination)
@@ -365,13 +366,13 @@ impl App {
             .get_emails_before_date(&cache_key, None, EMAIL_PAGE_SIZE)
             .await
         {
-            self.state.emails_loaded = emails.len();
-            self.state.all_emails_loaded = emails.len() < EMAIL_PAGE_SIZE;
+            self.state.pagination.emails_loaded = emails.len();
+            self.state.pagination.all_loaded = emails.len() < EMAIL_PAGE_SIZE;
             // Update pagination cursor to oldest email's date
-            self.state.pagination_cursor = emails.last().map(|e| e.date);
+            self.state.pagination.cursor = emails.last().map(|e| e.date);
             // Assign emails first, then build threads from reference (avoids clone)
             self.state.emails = emails;
-            self.state.threads = group_into_threads(&self.state.emails);
+            self.state.thread.threads = group_into_threads(&self.state.emails);
             // Invalidate search cache since threads changed
             self.state.invalidate_search_cache();
         }
@@ -382,22 +383,23 @@ impl App {
             self.state.unread_count = count;
         }
         // Reset thread selection if out of bounds
-        if self.state.selected_thread >= self.state.threads.len() {
-            self.state.selected_thread = self.state.threads.len().saturating_sub(1);
-            self.state.selected_in_thread = 0;
+        if self.state.thread.selected >= self.state.thread.threads.len() {
+            self.state.thread.selected = self.state.thread.threads.len().saturating_sub(1);
+            self.state.thread.selected_in_thread = 0;
         }
 
         // Clean up expanded threads that no longer exist
         let thread_ids: std::collections::HashSet<_> =
-            self.state.threads.iter().map(|t| t.id.clone()).collect();
+            self.state.thread.threads.iter().map(|t| t.id.clone()).collect();
         self.state
-            .expanded_threads
+            .thread
+            .expanded
             .retain(|id| thread_ids.contains(id));
     }
 
     /// Load more emails from cache (keyset pagination - O(1) instead of O(offset))
     pub(crate) async fn load_more_emails(&mut self) {
-        if self.state.all_emails_loaded {
+        if self.state.pagination.all_loaded {
             return;
         }
 
@@ -405,23 +407,23 @@ impl App {
         // Use cursor-based pagination: get emails older than the last loaded email
         if let Ok(more_emails) = self
             .cache
-            .get_emails_before_date(&cache_key, self.state.pagination_cursor, EMAIL_PAGE_SIZE)
+            .get_emails_before_date(&cache_key, self.state.pagination.cursor, EMAIL_PAGE_SIZE)
             .await
         {
             if more_emails.is_empty() {
-                self.state.all_emails_loaded = true;
+                self.state.pagination.all_loaded = true;
                 return;
             }
 
             let loaded_count = more_emails.len();
-            self.state.emails_loaded += loaded_count;
-            self.state.all_emails_loaded = loaded_count < EMAIL_PAGE_SIZE;
+            self.state.pagination.emails_loaded += loaded_count;
+            self.state.pagination.all_loaded = loaded_count < EMAIL_PAGE_SIZE;
             // Update cursor to new oldest email
-            self.state.pagination_cursor = more_emails.last().map(|e| e.date);
+            self.state.pagination.cursor = more_emails.last().map(|e| e.date);
 
             // Append new emails and rebuild threads
             self.state.emails.extend(more_emails);
-            self.state.threads = group_into_threads(&self.state.emails);
+            self.state.thread.threads = group_into_threads(&self.state.emails);
             // Invalidate search cache since threads changed
             self.state.invalidate_search_cache();
         }
@@ -432,13 +434,14 @@ impl App {
         // Common folder patterns to prefetch (handles various naming conventions)
         const PREFETCH_PATTERNS: &[&str] = &["sent", "drafts", "trash", "spam", "archive", "junk"];
 
-        let current = self.state.current_folder.to_lowercase();
+        let current = self.state.folder.current.to_lowercase();
 
         for pattern in PREFETCH_PATTERNS {
             // Find matching folder in the folder list (case-insensitive)
             if let Some(folder) = self
                 .state
-                .folders
+                .folder
+                .list
                 .iter()
                 .find(|f| f.to_lowercase().contains(pattern))
                 .cloned()
@@ -481,7 +484,7 @@ impl App {
         // Execute the deletions
         for (uid, account_id, folder) in to_execute {
             // Only delete if still on correct account/folder
-            if account_id == self.account_id() && folder == self.state.current_folder {
+            if account_id == self.account_id() && folder == self.state.folder.current {
                 self.accounts
                     .send_command(ImapCommand::Delete { uid })
                     .await

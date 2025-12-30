@@ -19,7 +19,7 @@ impl App {
         };
 
         // Verify we're on the same account/folder (undo is context-sensitive)
-        if entry.account_id != self.account_id() || entry.folder != self.state.current_folder {
+        if entry.account_id != self.account_id() || entry.folder != self.state.folder.current {
             self.state
                 .set_error("Cannot undo action from different account/folder");
             return;
@@ -53,7 +53,7 @@ impl App {
         }
 
         // Update thread unread counts (threads use indices, not clones)
-        for thread in self.state.threads.iter_mut() {
+        for thread in self.state.thread.threads.iter_mut() {
             if thread
                 .email_indices
                 .iter()
@@ -129,14 +129,14 @@ impl App {
         // Restore email to state
         self.state.emails.push(email);
         self.state.emails.sort_by(|a, b| b.date.cmp(&a.date));
-        self.state.threads = group_into_threads(&self.state.emails);
+        self.state.thread.threads = group_into_threads(&self.state.emails);
         // Invalidate search cache since threads changed
         self.state.invalidate_search_cache();
 
         // Restore selection (or clamp to bounds)
         let visible_count = self.state.visible_threads().len();
-        self.state.selected_thread = thread_index.min(visible_count.saturating_sub(1));
-        self.state.selected_in_thread = 0;
+        self.state.thread.selected = thread_index.min(visible_count.saturating_sub(1));
+        self.state.thread.selected_in_thread = 0;
 
         self.state.set_status("Undo: email restored");
         // No IMAP command needed - deletion was never sent to server

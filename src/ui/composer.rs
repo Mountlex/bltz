@@ -76,7 +76,7 @@ pub fn render_composer(
     email: &ComposeEmail,
     field: ComposerField,
 ) {
-    let has_multiple_accounts = state.account_names.len() > 1;
+    let has_multiple_accounts = state.connection.account_names.len() > 1;
     let layout = compute_layout(frame.area(), has_multiple_accounts);
 
     // Status bar
@@ -91,8 +91,9 @@ pub fn render_composer(
 
     // From field (multi-account only)
     if let Some(from_area) = layout.from_area {
-        let from_account_index = email.from_account_index.unwrap_or(state.account_index);
+        let from_account_index = email.from_account_index.unwrap_or(state.connection.account_index);
         let from_account_name = state
+            .connection
             .account_names
             .get(from_account_index)
             .map(|s| s.as_str())
@@ -136,13 +137,13 @@ pub fn render_composer(
     );
 
     // Help bar or error
-    if let Some(ref error) = state.error {
+    if let Some(ref error) = state.status.error {
         error_bar(frame, layout.help_area, error);
     } else {
-        let hints: &[(&str, &str)] = if state.autocomplete_visible {
+        let hints: &[(&str, &str)] = if state.autocomplete.visible {
             &[("Tab", "select"), ("↑/↓", "nav"), ("Esc", "close")]
         } else if has_multiple_accounts {
-            if state.ai_polish_enabled {
+            if state.polish.enabled {
                 &[
                     ("Tab", "next"),
                     ("Ctrl+A", "account"),
@@ -158,7 +159,7 @@ pub fn render_composer(
                     ("Esc", "cancel"),
                 ]
             }
-        } else if state.ai_polish_enabled {
+        } else if state.polish.enabled {
             &[
                 ("Tab", "next"),
                 ("Ctrl+P", "polish"),
@@ -172,7 +173,7 @@ pub fn render_composer(
     }
 
     // Autocomplete dropdown (rendered last, on top)
-    if state.autocomplete_visible && !state.autocomplete_suggestions.is_empty() {
+    if state.autocomplete.visible && !state.autocomplete.suggestions.is_empty() {
         let dropdown_area = match field {
             ComposerField::To => layout.to_area,
             ComposerField::Cc => layout.cc_area,
@@ -182,13 +183,13 @@ pub fn render_composer(
     }
 
     // Polish preview modal (rendered on top of everything)
-    if let Some(ref preview) = state.polish_preview {
+    if let Some(ref preview) = state.polish.preview {
         render_polish_preview(frame, preview);
     }
 }
 
 fn render_autocomplete_dropdown(frame: &mut Frame, field_area: Rect, state: &AppState) {
-    let max_suggestions = 5.min(state.autocomplete_suggestions.len());
+    let max_suggestions = 5.min(state.autocomplete.suggestions.len());
     let dropdown_height = (max_suggestions as u16) + 2; // +2 for borders
 
     let dropdown_area = Rect {
@@ -201,12 +202,13 @@ fn render_autocomplete_dropdown(frame: &mut Frame, field_area: Rect, state: &App
     frame.render_widget(Clear, dropdown_area);
 
     let items: Vec<ListItem> = state
-        .autocomplete_suggestions
+        .autocomplete
+        .suggestions
         .iter()
         .take(max_suggestions)
         .enumerate()
         .map(|(idx, contact)| {
-            let style = if idx == state.autocomplete_selected {
+            let style = if idx == state.autocomplete.selected {
                 Theme::selected()
             } else {
                 Theme::text()

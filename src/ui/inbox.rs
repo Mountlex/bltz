@@ -75,8 +75,8 @@ fn highlight_matches(
 }
 
 pub fn render_inbox(frame: &mut Frame, state: &AppState) {
-    let show_search_bar = state.modal.is_search() || !state.search_query.is_empty();
-    let show_command_bar = state.modal.is_command() || state.command_result.is_some();
+    let show_search_bar = state.modal.is_search() || !state.search.query.is_empty();
+    let show_command_bar = state.modal.is_command() || state.modal.command_result().is_some();
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -112,36 +112,36 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
 
     // Status bar
     let visible_count = state.visible_threads().len();
-    let folder_name = if state.current_folder.is_empty() {
+    let folder_name = if state.folder.current.is_empty() {
         "INBOX"
     } else {
-        &state.current_folder
+        &state.folder.current
     };
 
     let status_info = StatusInfo {
         folder: folder_name,
         unread: state.unread_count,
         total: state.total_count,
-        connected: state.connected,
-        loading: state.loading,
-        last_sync: state.last_sync,
-        account: if state.account_name.is_empty() {
+        connected: state.connection.connected,
+        loading: state.status.loading,
+        last_sync: state.connection.last_sync,
+        account: if state.connection.account_name.is_empty() {
             "Not connected"
         } else {
-            &state.account_name
+            &state.connection.account_name
         },
-        search_query: if state.search_query.is_empty() {
+        search_query: if state.search.query.is_empty() {
             None
         } else {
-            Some(&state.search_query)
+            Some(&state.search.query)
         },
         search_results: visible_count,
-        status_message: if state.status.is_empty() {
+        status_message: if state.status.message.is_empty() {
             None
         } else {
-            Some(&state.status)
+            Some(&state.status.message)
         },
-        other_accounts: &state.other_accounts,
+        other_accounts: &state.connection.other_accounts,
         starred_view: state.is_starred_view(),
     };
     enhanced_status_bar(frame, status_area, &status_info);
@@ -177,7 +177,7 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
     // Command bar or error (keybindings footer removed - use :keys command instead)
     if show_command_bar {
         render_command_bar(frame, help_area, state);
-    } else if let Some(ref error) = state.error {
+    } else if let Some(ref error) = state.status.error {
         error_bar(frame, help_area, error);
     } else if state.modal.is_folder_picker() {
         let hints = &[("j/k", "nav"), ("Enter", "select"), ("Esc", "close")];
@@ -197,7 +197,7 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
     }
 
     // Help/Keybindings popups (rendered last so they appear on top)
-    match &state.command_result {
+    match state.modal.command_result() {
         Some(CommandResult::ShowKeys(ref keys)) => {
             render_keybindings_popup(frame, frame.area(), keys);
         }
@@ -211,7 +211,7 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
 fn render_search_bar(frame: &mut Frame, area: Rect, state: &AppState) {
     let style = if state.modal.is_search() {
         Theme::status_bar()
-    } else if !state.search_query.is_empty() {
+    } else if !state.search.query.is_empty() {
         // Show query more visibly when inactive but has content
         Theme::text_secondary()
     } else {
@@ -219,7 +219,7 @@ fn render_search_bar(frame: &mut Frame, area: Rect, state: &AppState) {
     };
 
     let cursor = if state.modal.is_search() { "│" } else { "" };
-    let text = format!(" / {}{} ", state.search_query, cursor);
+    let text = format!(" / {}{} ", state.search.query, cursor);
 
     let paragraph = Paragraph::new(text).style(style);
     frame.render_widget(paragraph, area);
@@ -227,17 +227,18 @@ fn render_search_bar(frame: &mut Frame, area: Rect, state: &AppState) {
 
 fn render_command_bar(frame: &mut Frame, area: Rect, state: &AppState) {
     // Show confirmation prompt, result, or input
-    if state.pending_confirmation.is_some() {
+    if state.modal.pending_confirmation().is_some() {
         // Confirmation mode - show the prompt from command_result
-        if let Some(CommandResult::Success(msg)) = &state.command_result {
-            let text = format!(" :{} {} ", state.command_input, msg);
+        if let Some(CommandResult::Success(msg)) = state.modal.command_result() {
+            let input = state.modal.command_input().unwrap_or("");
+            let text = format!(" :{} {} ", input, msg);
             let paragraph = Paragraph::new(text).style(Theme::status_bar());
             frame.render_widget(paragraph, area);
         }
         return;
     }
 
-    if let Some(ref result) = state.command_result {
+    if let Some(result) = state.modal.command_result() {
         let (text, style) = match result {
             CommandResult::Success(msg) => (msg.clone(), Theme::text()),
             CommandResult::Error(msg) => (msg.clone(), Theme::error_bar()),
@@ -263,7 +264,8 @@ fn render_command_bar(frame: &mut Frame, area: Rect, state: &AppState) {
         Theme::text_muted()
     };
 
-    let text = format!(" :{}{} ", state.command_input, cursor);
+    let input = state.modal.command_input().unwrap_or("");
+    let text = format!(" :{}{} ", input, cursor);
     let paragraph = Paragraph::new(text).style(style);
     frame.render_widget(paragraph, area);
 }
@@ -283,9 +285,9 @@ fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_bord
     let visible = state.visible_threads();
 
     if visible.is_empty() {
-        let msg = if state.loading {
+        let msg = if state.status.loading {
             "Loading emails..."
-        } else if !state.search_query.is_empty() {
+        } else if !state.search.query.is_empty() {
             "No matching emails. Press Esc to clear search."
         } else if state.is_starred_view() {
             "No starred emails. Press s on any email to star it."
@@ -304,12 +306,12 @@ fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_bord
     let mut selected_index: Option<usize> = None;
 
     for (thread_idx, thread) in visible.iter().enumerate() {
-        let is_current_thread = thread_idx == state.selected_thread;
+        let is_current_thread = thread_idx == state.thread.selected;
         let is_expanded = state.is_thread_expanded(&thread.id);
 
         if is_expanded {
             // Render thread header (collapsed style) as first item
-            let is_header_selected = is_current_thread && state.selected_in_thread == 0;
+            let is_header_selected = is_current_thread && state.thread.selected_in_thread == 0;
             if is_header_selected {
                 selected_index = Some(items.len());
             }
@@ -321,7 +323,7 @@ fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_bord
                 is_header_selected,
                 inner.width,
                 true,
-                &state.search_query,
+                &state.search.query,
                 match_type,
             );
             items.extend(header_items);
@@ -329,7 +331,7 @@ fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_bord
             // Render each email in thread
             for (email_idx, email) in thread.emails(&state.emails).enumerate() {
                 let is_email_selected =
-                    is_current_thread && state.selected_in_thread == email_idx + 1;
+                    is_current_thread && state.thread.selected_in_thread == email_idx + 1;
                 if is_email_selected {
                     selected_index = Some(items.len());
                 }
@@ -338,7 +340,7 @@ fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_bord
                     email,
                     is_email_selected,
                     inner.width,
-                    &state.search_query,
+                    &state.search.query,
                     email_match_type,
                 );
                 items.extend(email_items);
@@ -357,7 +359,7 @@ fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_bord
                 is_selected,
                 inner.width,
                 false,
-                &state.search_query,
+                &state.search.query,
                 match_type,
             );
             items.extend(thread_items);
@@ -472,9 +474,9 @@ fn render_email_body(frame: &mut Frame, area: Rect, state: &AppState) {
     // Clear the area first to prevent rendering artifacts when content changes
     frame.render_widget(Clear, area);
 
-    let body_text: String = if let Some(ref body) = state.current_body {
+    let body_text: String = if let Some(ref body) = state.reader.body {
         body.display_text()
-    } else if state.loading {
+    } else if state.status.loading {
         format!("{} Loading...", spinner_char())
     } else {
         // Show preview if body not loaded
@@ -496,7 +498,7 @@ fn render_email_body(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let paragraph = Paragraph::new(text)
         .wrap(Wrap { trim: false })
-        .scroll((state.reader_scroll as u16, 0));
+        .scroll((state.reader.scroll as u16, 0));
 
     frame.render_widget(paragraph, area);
 }
@@ -876,7 +878,7 @@ fn render_thread_email(
 fn render_folder_picker(frame: &mut Frame, area: Rect, state: &AppState) {
     // Calculate popup size and position (min 10 chars wide for usability)
     let popup_width = 30.min(area.width.saturating_sub(4)).max(10);
-    let popup_height = (state.folders.len() as u16 + 2)
+    let popup_height = (state.folder.list.len() as u16 + 2)
         .min(area.height.saturating_sub(4))
         .max(3);
 
@@ -897,8 +899,8 @@ fn render_folder_picker(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
-    if state.folders.is_empty() {
-        let msg = if state.loading {
+    if state.folder.list.is_empty() {
+        let msg = if state.status.loading {
             "Loading..."
         } else {
             "No folders"
@@ -912,12 +914,13 @@ fn render_folder_picker(frame: &mut Frame, area: Rect, state: &AppState) {
 
     // Build folder list items
     let items: Vec<ListItem> = state
-        .folders
+        .folder
+        .list
         .iter()
         .enumerate()
         .map(|(idx, folder)| {
-            let is_selected = idx == state.folder_selected;
-            let is_current = folder == &state.current_folder;
+            let is_selected = idx == state.folder.selected;
+            let is_current = folder == &state.folder.current;
 
             let style = if is_selected {
                 Theme::selected()

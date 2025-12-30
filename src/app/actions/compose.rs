@@ -30,7 +30,7 @@ impl App {
     /// Get email body text for quoting in replies/forwards.
     /// Checks current_body first, then cache.
     async fn get_email_body_text(&self, uid: u32) -> String {
-        if let Some(ref body) = self.state.current_body {
+        if let Some(ref body) = self.state.reader.body {
             return body.display_text().to_string();
         }
         if let Ok(Some(body)) = self.cache.get_email_body(&self.cache_key(), uid).await {
@@ -70,7 +70,7 @@ impl App {
         // Get our email address for filtering
         let my_email = self
             .accounts
-            .get(self.state.account_index)
+            .get(self.state.connection.account_index)
             .map(|h| h.config.email.as_str())
             .unwrap_or("");
 
@@ -134,7 +134,7 @@ impl App {
     }
 
     pub(crate) async fn do_send(&mut self, email: ComposeEmail) {
-        self.state.loading = true;
+        self.state.status.loading = true;
         self.state.set_status("Sending...");
 
         // Determine which account to send from
@@ -145,7 +145,7 @@ impl App {
             Some(h) => &h.config,
             None => {
                 self.state.set_error("Invalid sending account");
-                self.state.loading = false;
+                self.state.status.loading = false;
                 return;
             }
         };
@@ -161,7 +161,7 @@ impl App {
                 Err(e) => {
                     self.state
                         .set_error(format!("Failed to get SMTP password: {}", e));
-                    self.state.loading = false;
+                    self.state.status.loading = false;
                     return;
                 }
             },
@@ -174,7 +174,7 @@ impl App {
                             "OAuth2 refresh token not found: {}. Please re-authenticate.",
                             e
                         ));
-                        self.state.loading = false;
+                        self.state.status.loading = false;
                         return;
                     }
                 };
@@ -186,7 +186,7 @@ impl App {
                             "Failed to refresh OAuth2 access token: {}. Please re-authenticate.",
                             e
                         ));
-                        self.state.loading = false;
+                        self.state.status.loading = false;
                         return;
                     }
                 }
@@ -207,7 +207,7 @@ impl App {
             Err(e) => {
                 self.state
                     .set_error(format!("Failed to connect to SMTP: {}", e));
-                self.state.loading = false;
+                self.state.status.loading = false;
                 return;
             }
         };
@@ -219,6 +219,7 @@ impl App {
 
                 let account_name = self
                     .state
+                    .connection
                     .account_names
                     .get(send_account_index)
                     .cloned()
@@ -232,7 +233,7 @@ impl App {
             }
         }
 
-        self.state.loading = false;
+        self.state.status.loading = false;
     }
 
     pub(super) fn cancel_compose(&mut self) {
@@ -249,7 +250,7 @@ impl App {
                 return; // Only one account, nothing to cycle
             }
 
-            let current_index = email.from_account_index.unwrap_or(self.state.account_index);
+            let current_index = email.from_account_index.unwrap_or(self.state.connection.account_index);
             let next_index = (current_index + 1) % account_count;
             email.from_account_index = Some(next_index);
         }
@@ -263,15 +264,15 @@ impl App {
                 ComposerField::To => &email.to,
                 ComposerField::Cc => &email.cc,
                 _ => {
-                    self.state.autocomplete_visible = false;
-                    self.state.autocomplete_suggestions.clear();
+                    self.state.autocomplete.visible = false;
+                    self.state.autocomplete.suggestions.clear();
                     return;
                 }
             };
 
             if field_value.is_empty() {
-                self.state.autocomplete_visible = false;
-                self.state.autocomplete_suggestions.clear();
+                self.state.autocomplete.visible = false;
+                self.state.autocomplete.suggestions.clear();
                 return;
             }
 
@@ -283,21 +284,21 @@ impl App {
                 .trim();
 
             if search_text.is_empty() {
-                self.state.autocomplete_visible = false;
-                self.state.autocomplete_suggestions.clear();
+                self.state.autocomplete.visible = false;
+                self.state.autocomplete.suggestions.clear();
                 return;
             }
 
             // Search contacts matching the current input
             match self.contacts.search(search_text).await {
                 Ok(contacts) => {
-                    self.state.autocomplete_suggestions = contacts;
-                    self.state.autocomplete_visible =
-                        !self.state.autocomplete_suggestions.is_empty();
-                    self.state.autocomplete_selected = 0;
+                    self.state.autocomplete.suggestions = contacts;
+                    self.state.autocomplete.visible =
+                        !self.state.autocomplete.suggestions.is_empty();
+                    self.state.autocomplete.selected = 0;
                 }
                 Err(_) => {
-                    self.state.autocomplete_visible = false;
+                    self.state.autocomplete.visible = false;
                 }
             }
         }
@@ -305,16 +306,16 @@ impl App {
 
     /// Move autocomplete selection up
     pub(crate) fn autocomplete_up(&mut self) {
-        if self.state.autocomplete_selected > 0 {
-            self.state.autocomplete_selected -= 1;
+        if self.state.autocomplete.selected > 0 {
+            self.state.autocomplete.selected -= 1;
         }
     }
 
     /// Move autocomplete selection down
     pub(crate) fn autocomplete_down(&mut self) {
-        let max = self.state.autocomplete_suggestions.len().saturating_sub(1);
-        if self.state.autocomplete_selected < max {
-            self.state.autocomplete_selected += 1;
+        let max = self.state.autocomplete.suggestions.len().saturating_sub(1);
+        if self.state.autocomplete.selected < max {
+            self.state.autocomplete.selected += 1;
         }
     }
 
@@ -322,8 +323,9 @@ impl App {
     pub(crate) fn autocomplete_select(&mut self) {
         if let Some(contact) = self
             .state
-            .autocomplete_suggestions
-            .get(self.state.autocomplete_selected)
+            .autocomplete
+            .suggestions
+            .get(self.state.autocomplete.selected)
         {
             if let View::Composer {
                 ref mut email,
@@ -335,8 +337,8 @@ impl App {
                     ComposerField::To => &mut email.to,
                     ComposerField::Cc => &mut email.cc,
                     _ => {
-                        self.state.autocomplete_visible = false;
-                        self.state.autocomplete_suggestions.clear();
+                        self.state.autocomplete.visible = false;
+                        self.state.autocomplete.suggestions.clear();
                         return;
                     }
                 };
@@ -352,12 +354,12 @@ impl App {
                 }
             }
         }
-        self.state.autocomplete_visible = false;
-        self.state.autocomplete_suggestions.clear();
+        self.state.autocomplete.visible = false;
+        self.state.autocomplete.suggestions.clear();
     }
 
     /// Close autocomplete dropdown
     pub(crate) fn autocomplete_close(&mut self) {
-        self.state.autocomplete_visible = false;
+        self.state.autocomplete.visible = false;
     }
 }

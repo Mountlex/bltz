@@ -29,10 +29,10 @@ pub fn render_contacts(frame: &mut Frame, state: &AppState) {
     render_contacts_list(frame, chunks[1], state);
 
     // Help bar or error
-    if let Some(ref error) = state.error {
+    if let Some(ref error) = state.status.error {
         error_bar(frame, chunks[2], error);
     } else {
-        let hints = if state.contacts_editing.is_some() {
+        let hints = if state.contacts.editing.is_some() {
             &[("Enter", "save"), ("Esc", "cancel")][..]
         } else {
             &[
@@ -47,13 +47,13 @@ pub fn render_contacts(frame: &mut Frame, state: &AppState) {
     }
 
     // Edit popup overlay (if editing)
-    if state.contacts_editing.is_some() {
+    if state.contacts.editing.is_some() {
         render_contact_edit_popup(frame, frame.area(), state);
     }
 }
 
 fn render_contacts_status_bar(frame: &mut Frame, area: Rect, state: &AppState) {
-    let count = state.contacts_list.len();
+    let count = state.contacts.list.len();
     let text = format!(" Contacts ({}) ", count);
 
     let paragraph = Paragraph::new(text).style(Theme::status_bar());
@@ -69,7 +69,7 @@ fn render_contacts_list(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if state.contacts_list.is_empty() {
+    if state.contacts.list.is_empty() {
         let msg =
             Paragraph::new("No contacts yet. Contacts are added when you send or receive emails.")
                 .style(Theme::text_muted())
@@ -82,8 +82,8 @@ fn render_contacts_list(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut items: Vec<ListItem> = Vec::new();
     let mut selected_index: Option<usize> = None;
 
-    for (idx, contact) in state.contacts_list.iter().enumerate() {
-        let is_selected = idx == state.contacts_selected;
+    for (idx, contact) in state.contacts.list.iter().enumerate() {
+        let is_selected = idx == state.contacts.selected;
         if is_selected {
             selected_index = Some(items.len());
         }
@@ -182,7 +182,7 @@ fn render_contact_item(
 }
 
 fn render_contact_edit_popup(frame: &mut Frame, area: Rect, state: &AppState) {
-    let edit_state = match &state.contacts_editing {
+    let edit_state = match &state.contacts.editing {
         Some(e) => e,
         None => return,
     };
@@ -210,7 +210,8 @@ fn render_contact_edit_popup(frame: &mut Frame, area: Rect, state: &AppState) {
 
     // Get the contact being edited
     let contact = state
-        .contacts_list
+        .contacts
+        .list
         .iter()
         .find(|c| c.id == edit_state.contact_id);
 

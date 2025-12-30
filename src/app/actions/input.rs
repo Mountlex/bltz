@@ -3,36 +3,41 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
-use crate::ui::app::{ComposerField, View};
+use crate::ui::app::{ComposerField, ModalState, View};
 
 use super::super::App;
 
 impl App {
     pub(crate) async fn handle_char(&mut self, c: char) {
         // Handle contacts edit input
-        if matches!(self.state.view, View::Contacts) && self.state.contacts_editing.is_some() {
+        if matches!(self.state.view, View::Contacts) && self.state.contacts.editing.is_some() {
             self.contacts_edit_char(c);
             return;
         }
 
         // Handle command input
-        if self.state.modal.is_command() && self.state.pending_confirmation.is_none() {
-            self.state.command_input.push(c);
+        if let ModalState::Command {
+            input, pending, ..
+        } = &mut self.state.modal
+        {
+            if pending.is_none() {
+                input.push(c);
+            }
             return;
         }
 
         // Handle search input
         if self.state.modal.is_search() {
             // Only reset selection when transitioning from empty to non-empty search
-            let was_empty = self.state.search_query.is_empty();
-            self.state.search_query.push(c);
+            let was_empty = self.state.search.query.is_empty();
+            self.state.search.query.push(c);
             // Instant header search (body FTS runs after debounce)
             self.state.update_search_cache_hybrid(HashSet::new());
             // Schedule body FTS search after debounce delay
             self.last_search_input = Some(Instant::now());
             if was_empty {
-                self.state.selected_thread = 0;
-                self.state.selected_in_thread = 0;
+                self.state.thread.selected = 0;
+                self.state.thread.selected_in_thread = 0;
             }
             return;
         }
@@ -78,27 +83,27 @@ impl App {
 
     pub(crate) async fn handle_backspace(&mut self) {
         // Handle contacts edit backspace
-        if matches!(self.state.view, View::Contacts) && self.state.contacts_editing.is_some() {
+        if matches!(self.state.view, View::Contacts) && self.state.contacts.editing.is_some() {
             self.contacts_edit_backspace();
             return;
         }
 
         // Handle command backspace
-        if self.state.modal.is_command() {
-            self.state.command_input.pop();
+        if let ModalState::Command { input, .. } = &mut self.state.modal {
+            input.pop();
             return;
         }
 
         // Handle search backspace
         if self.state.modal.is_search() {
-            self.state.search_query.pop();
+            self.state.search.query.pop();
             // Instant header search (body FTS runs after debounce)
             self.state.update_search_cache_hybrid(HashSet::new());
             // Schedule body FTS search after debounce delay
             self.last_search_input = Some(Instant::now());
             // Reset selection when search changes
-            self.state.selected_thread = 0;
-            self.state.selected_in_thread = 0;
+            self.state.thread.selected = 0;
+            self.state.thread.selected_in_thread = 0;
             return;
         }
 

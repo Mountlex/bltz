@@ -66,7 +66,7 @@ fn handle_key(key: KeyEvent, state: &AppState, bindings: &KeyBindings) -> InputR
 }
 
 fn is_polish_preview_mode(state: &AppState) -> bool {
-    state.polish_preview.is_some()
+    state.polish.preview.is_some()
 }
 
 fn handle_polish_preview_input(key: KeyEvent) -> InputResult {
@@ -144,7 +144,7 @@ fn handle_text_input(key: KeyEvent, state: &AppState, bindings: &KeyBindings) ->
 
 fn handle_command_input(key: KeyEvent, state: &AppState) -> InputResult {
     // If awaiting confirmation (e.g., for :clear)
-    if state.pending_confirmation.is_some() {
+    if state.modal.pending_confirmation().is_some() {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 return InputResult::Action(Action::ConfirmCommand);
@@ -184,7 +184,7 @@ fn is_contacts_mode(state: &AppState) -> bool {
 }
 
 fn is_contacts_edit_mode(state: &AppState) -> bool {
-    matches!(state.view, View::Contacts) && state.contacts_editing.is_some()
+    matches!(state.view, View::Contacts) && state.contacts.editing.is_some()
 }
 
 fn handle_contacts_input(key: KeyEvent, bindings: &KeyBindings) -> InputResult {
@@ -221,7 +221,7 @@ fn is_autocomplete_mode(state: &AppState) -> bool {
     if let View::Composer { field, .. } = state.view {
         use crate::ui::app::ComposerField;
         return (field == ComposerField::To || field == ComposerField::Cc)
-            && state.autocomplete_visible;
+            && state.autocomplete.visible;
     }
     false
 }

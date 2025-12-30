@@ -114,9 +114,11 @@ impl App {
             // Command mode
             Action::Command => {
                 if matches!(self.state.view, View::Inbox) && !self.state.modal.is_active() {
-                    self.state.modal = ModalState::Command;
-                    self.state.command_input.clear();
-                    self.state.command_result = None;
+                    self.state.modal = ModalState::Command {
+                        input: String::new(),
+                        result: None,
+                        pending: None,
+                    };
                 }
             }
             Action::ExecuteCommand => {

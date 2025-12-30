@@ -31,11 +31,11 @@ impl App {
         };
 
         // Toggle the view mode
-        self.state.reader_show_summary = !self.state.reader_show_summary;
+        self.state.reader.show_summary = !self.state.reader.show_summary;
 
         // If switching to summary view and no cached summary, request one
-        if self.state.reader_show_summary {
-            let needs_fetch = match &self.state.cached_summary {
+        if self.state.reader.show_summary {
+            let needs_fetch = match &self.state.reader.cached_summary {
                 Some((cached_uid, _)) => *cached_uid != uid,
                 None => true,
             };
@@ -49,7 +49,7 @@ impl App {
     /// Request AI summary for an email
     async fn request_email_summary(&mut self, uid: u32) {
         // Extract needed data first to avoid borrow conflicts
-        let body_text = match &self.state.current_body {
+        let body_text = match &self.state.reader.body {
             Some(body) => body.display_text(),
             None => {
                 self.state.set_error("Email body not loaded yet");
@@ -64,7 +64,7 @@ impl App {
 
         let Some(ref ai) = self.ai_actor else { return };
 
-        self.state.summary_loading = true;
+        self.state.reader.summary_loading = true;
         self.state.set_status("Generating summary...");
 
         let _ = ai
@@ -107,10 +107,10 @@ impl App {
         }
 
         // Check if we have a cached summary for this thread
-        if let Some((ref cached_id, _)) = self.state.cached_thread_summary {
+        if let Some((ref cached_id, _)) = self.state.reader.cached_thread_summary {
             if *cached_id == thread.id {
                 // Already have summary, just toggle view
-                self.state.reader_show_summary = true;
+                self.state.reader.show_summary = true;
                 return;
             }
         }
@@ -130,8 +130,8 @@ impl App {
 
         let Some(ref ai) = self.ai_actor else { return };
 
-        self.state.summary_loading = true;
-        self.state.reader_show_summary = true;
+        self.state.reader.summary_loading = true;
+        self.state.reader.show_summary = true;
         self.state.set_status("Generating thread summary...");
 
         let _ = ai
@@ -173,7 +173,7 @@ impl App {
         let Some(ref ai) = self.ai_actor else { return };
 
         // Set up polish preview in loading state
-        self.state.polish_preview = Some(PolishPreview {
+        self.state.polish.preview = Some(PolishPreview {
             original: body.clone(),
             polished: String::new(),
             loading: true,
@@ -185,7 +185,7 @@ impl App {
 
     /// Accept the polished text and apply it to the composer
     pub(crate) fn accept_polish(&mut self) {
-        if let Some(preview) = self.state.polish_preview.take() {
+        if let Some(preview) = self.state.polish.preview.take() {
             if !preview.loading && !preview.polished.is_empty() {
                 if let View::Composer { ref mut email, .. } = self.state.view {
                     email.body = preview.polished;
@@ -197,8 +197,8 @@ impl App {
 
     /// Reject the polished text and keep the original
     pub(crate) fn reject_polish(&mut self) {
-        if self.state.polish_preview.is_some() {
-            self.state.polish_preview = None;
+        if self.state.polish.preview.is_some() {
+            self.state.polish.preview = None;
             self.state.set_status("Polish cancelled");
         }
     }

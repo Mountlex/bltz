@@ -8,8 +8,8 @@ impl App {
     pub(crate) fn move_up(&mut self) {
         // Handle folder picker navigation
         if self.state.modal.is_folder_picker() {
-            if self.state.folder_selected > 0 {
-                self.state.folder_selected -= 1;
+            if self.state.folder.selected > 0 {
+                self.state.folder.selected -= 1;
             }
             return;
         }
@@ -19,7 +19,7 @@ impl App {
                 self.state.move_up();
             }
             View::Reader { .. } => {
-                self.state.scroll_reader_up();
+                self.state.reader.scroll_up();
             }
             View::Contacts => {
                 self.contacts_move_up();
@@ -41,8 +41,8 @@ impl App {
     pub(crate) fn move_down(&mut self) {
         // Handle folder picker navigation
         if self.state.modal.is_folder_picker() {
-            if self.state.folder_selected < self.state.folders.len().saturating_sub(1) {
-                self.state.folder_selected += 1;
+            if self.state.folder.selected < self.state.folder.list.len().saturating_sub(1) {
+                self.state.folder.selected += 1;
             }
             return;
         }
@@ -52,7 +52,7 @@ impl App {
                 self.state.move_down();
             }
             View::Reader { .. } => {
-                self.state.scroll_reader_down();
+                self.state.reader.scroll_down();
             }
             View::Contacts => {
                 self.contacts_move_down();
@@ -81,15 +81,15 @@ impl App {
                 self.state.view = View::Inbox;
                 // Try to keep body from cache for smooth transition
                 if let Ok(Some(body)) = self.cache.get_email_body(&self.cache_key(), uid).await {
-                    self.state.current_body = Some(body);
+                    self.state.reader.body = Some(body);
                     self.last_prefetch_uid = Some(uid);
                 } else {
-                    self.state.current_body = None;
+                    self.state.reader.body = None;
                 }
             }
             View::Composer { .. } => {
                 self.state.view = View::Inbox;
-                self.state.current_body = None;
+                self.state.reader.body = None;
             }
             View::Contacts => {
                 // Go back to inbox
@@ -119,7 +119,7 @@ impl App {
                 }
             }
             View::Reader { .. } => {
-                self.state.scroll_reader_by(delta);
+                self.state.reader.scroll_by(delta);
             }
             _ => {}
         }
@@ -134,10 +134,10 @@ impl App {
     pub(super) fn move_to_top(&mut self) {
         match &self.state.view {
             View::Inbox => {
-                self.state.selected_thread = 0;
-                self.state.selected_in_thread = 0;
+                self.state.thread.selected = 0;
+                self.state.thread.selected_in_thread = 0;
             }
-            View::Reader { .. } => self.state.reset_reader_scroll(),
+            View::Reader { .. } => self.state.reader.reset_scroll(),
             _ => {}
         }
     }
@@ -145,9 +145,9 @@ impl App {
     pub(super) fn move_to_bottom(&mut self) {
         match &self.state.view {
             View::Inbox => {
-                if !self.state.threads.is_empty() {
-                    self.state.selected_thread = self.state.threads.len() - 1;
-                    self.state.selected_in_thread = 0;
+                if !self.state.thread.threads.is_empty() {
+                    self.state.thread.selected = self.state.thread.threads.len() - 1;
+                    self.state.thread.selected_in_thread = 0;
                 }
             }
             _ => {}

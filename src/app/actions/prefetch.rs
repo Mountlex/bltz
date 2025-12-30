@@ -20,21 +20,21 @@ impl App {
         };
 
         // Skip if we already have this body loaded
-        if self.last_prefetch_uid == Some(current_uid) && self.state.current_body.is_some() {
+        if self.last_prefetch_uid == Some(current_uid) && self.state.reader.body.is_some() {
             return;
         }
 
         // Reset scroll for new email
-        self.state.reader_scroll = 0;
+        self.state.reader.scroll = 0;
 
         // Check local cache for current email first (instant, no debounce needed)
         let cache_key = self.cache_key();
         if let Ok(Some(body)) = self.cache.get_email_body(&cache_key, current_uid).await {
-            self.state.current_body = Some(body);
+            self.state.reader.body = Some(body);
             self.last_prefetch_uid = Some(current_uid);
         } else {
             // Only clear if not in cache - avoids flash of empty content
-            self.state.current_body = None;
+            self.state.reader.body = None;
         }
 
         // Get nearby UIDs for prefetching
@@ -97,9 +97,9 @@ impl App {
 
         // If current email is now cached, load it
         if let Some(cur_uid) = current_uid {
-            if cached_uids.contains(&cur_uid) && self.state.current_body.is_none() {
+            if cached_uids.contains(&cur_uid) && self.state.reader.body.is_none() {
                 if let Ok(Some(body)) = self.cache.get_email_body(&cache_key, cur_uid).await {
-                    self.state.current_body = Some(body);
+                    self.state.reader.body = Some(body);
                     self.last_prefetch_uid = Some(cur_uid);
                 }
             }

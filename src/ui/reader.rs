@@ -26,31 +26,31 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
     let email = state.emails.iter().find(|e| e.uid == uid);
 
     // Enhanced status bar (same as inbox)
-    let folder_name = if state.current_folder.is_empty() {
+    let folder_name = if state.folder.current.is_empty() {
         "INBOX"
     } else {
-        &state.current_folder
+        &state.folder.current
     };
     let status_info = StatusInfo {
         folder: folder_name,
         unread: state.unread_count,
         total: state.total_count,
-        connected: state.connected,
-        loading: state.loading,
-        last_sync: state.last_sync,
-        account: if state.account_name.is_empty() {
+        connected: state.connection.connected,
+        loading: state.status.loading,
+        last_sync: state.connection.last_sync,
+        account: if state.connection.account_name.is_empty() {
             "Not connected"
         } else {
-            &state.account_name
+            &state.connection.account_name
         },
         search_query: None, // Reader doesn't show search
         search_results: 0,
-        status_message: if state.status.is_empty() {
+        status_message: if state.status.message.is_empty() {
             None
         } else {
-            Some(&state.status)
+            Some(&state.status.message)
         },
-        other_accounts: &state.other_accounts,
+        other_accounts: &state.connection.other_accounts,
         starred_view: state.is_starred_view(),
     };
     enhanced_status_bar(frame, chunks[0], &status_info);
@@ -67,11 +67,11 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
     }
 
     // Help bar or error
-    if let Some(ref error) = state.error {
+    if let Some(ref error) = state.status.error {
         error_bar(frame, chunks[3], error);
     } else {
         // Dynamic hints based on AI summary mode
-        let hints: &[(&str, &str)] = if state.reader_show_summary {
+        let hints: &[(&str, &str)] = if state.reader.show_summary {
             &[
                 ("T", "full"),
                 ("j/k", "scroll"),
@@ -142,16 +142,16 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let body_text: String = if state.summary_loading {
+    let body_text: String = if state.reader.summary_loading {
         "Generating AI summary...".to_string()
-    } else if state.reader_show_summary {
+    } else if state.reader.show_summary {
         // Show AI summary if available
-        if let Some((cached_uid, ref summary)) = state.cached_summary {
+        if let Some((cached_uid, ref summary)) = state.reader.cached_summary {
             if cached_uid == uid {
                 format!("[AI Summary]\n\n{}", summary)
             } else {
                 // Show thread summary if available
-                if let Some((ref thread_id, ref summary)) = state.cached_thread_summary {
+                if let Some((ref thread_id, ref summary)) = state.reader.cached_thread_summary {
                     if state
                         .current_thread()
                         .map(|t| &t.id == thread_id)
@@ -165,7 +165,7 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
                     "[Press T to generate summary]".to_string()
                 }
             }
-        } else if let Some((ref thread_id, ref summary)) = state.cached_thread_summary {
+        } else if let Some((ref thread_id, ref summary)) = state.reader.cached_thread_summary {
             if state
                 .current_thread()
                 .map(|t| &t.id == thread_id)
@@ -178,9 +178,9 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
         } else {
             "[Press T to generate summary]".to_string()
         }
-    } else if let Some(ref body) = state.current_body {
+    } else if let Some(ref body) = state.reader.body {
         body.display_text()
-    } else if state.loading {
+    } else if state.status.loading {
         "Loading...".to_string()
     } else {
         "[No content]".to_string()
@@ -193,7 +193,7 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
 
     let paragraph = Paragraph::new(text)
         .wrap(Wrap { trim: false })
-        .scroll((state.reader_scroll as u16, 0));
+        .scroll((state.reader.scroll as u16, 0));
 
     frame.render_widget(paragraph, inner);
 }
