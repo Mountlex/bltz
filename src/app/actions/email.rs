@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use crate::app::undo::{PendingDeletion, UndoEntry, UndoableAction};
 use crate::mail::types::EmailFlags;
-use crate::mail::{group_into_threads, ImapCommand};
+use crate::mail::{ImapCommand, group_into_threads};
 use crate::ui::app::{ModalState, View};
 
 use super::super::App;

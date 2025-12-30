@@ -1,26 +1,26 @@
 use aho_corasick::AhoCorasick;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
-    Frame,
 };
 
 use super::app::{AppState, MatchType};
 use super::status_bar::spinner_char;
-use super::theme::{symbols, with_selection_bg, Theme};
+use super::theme::{Theme, symbols, with_selection_bg};
 use super::widgets::{
-    enhanced_status_bar, error_bar, format_date, format_relative_date, help_bar, sanitize_text,
-    truncate_string, StatusInfo,
+    StatusInfo, enhanced_status_bar, error_bar, format_date, format_relative_date, help_bar,
+    sanitize_text, truncate_string,
 };
 use crate::command::{CommandHelp, CommandResult};
 use crate::constants::{
     MIN_SPLIT_VIEW_WIDTH, SCROLL_TARGET_FRACTION, SPLIT_RATIO_MAX, SPLIT_RATIO_MIN,
 };
 use crate::input::KeybindingEntry;
-use crate::mail::types::EmailHeader;
 use crate::mail::EmailThread;
+use crate::mail::types::EmailHeader;
 
 /// Highlight query matches in text, returning multiple styled spans
 /// Uses aho-corasick for efficient case-insensitive matching

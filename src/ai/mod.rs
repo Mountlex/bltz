@@ -8,5 +8,5 @@ mod actor;
 mod client;
 mod prompts;
 
-pub use actor::{spawn_ai_actor, AiActorHandle, AiCommand, AiEvent};
+pub use actor::{AiActorHandle, AiCommand, AiEvent, spawn_ai_actor};
 pub use client::OpenRouterClient;

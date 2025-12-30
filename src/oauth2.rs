@@ -3,7 +3,7 @@
 //! Uses Google's OAuth2 installed app flow which opens a browser for authentication.
 //! This is required because Gmail scopes are not supported by the device code flow.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

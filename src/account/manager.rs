@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::cache::Cache;
 use crate::config::{AccountConfig, AuthMethod, Config};
 use crate::credentials::CredentialStore;
-use crate::mail::{spawn_imap_actor, ImapClient, ImapCommand, ImapEvent};
+use crate::mail::{ImapClient, ImapCommand, ImapEvent, spawn_imap_actor};
 
 use super::AccountHandle;
 

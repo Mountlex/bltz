@@ -1,14 +1,14 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
 };
 
 use super::app::AppState;
 use super::theme::Theme;
 use super::widgets::{
-    enhanced_status_bar, error_bar, format_date, help_bar, sanitize_text, StatusInfo,
+    StatusInfo, enhanced_status_bar, error_bar, format_date, help_bar, sanitize_text,
 };
 
 pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {

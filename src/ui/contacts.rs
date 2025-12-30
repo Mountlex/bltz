@@ -1,15 +1,15 @@
 //! Contacts view rendering
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::Modifier,
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
-    Frame,
 };
 
 use super::app::AppState;
-use super::theme::{with_selection_bg, Theme};
+use super::theme::{Theme, with_selection_bg};
 use super::widgets::{error_bar, help_bar, truncate_string};
 
 pub fn render_contacts(frame: &mut Frame, state: &AppState) {

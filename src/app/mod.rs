@@ -7,16 +7,16 @@ pub mod undo;
 use anyhow::Result;
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::collections::HashSet;
 use std::io;
 use std::sync::Arc;
 use std::time::Instant;
 
 use crate::account::AccountManager;
-use crate::ai::{spawn_ai_actor, AiActorHandle, OpenRouterClient};
+use crate::ai::{AiActorHandle, OpenRouterClient, spawn_ai_actor};
 use crate::cache::Cache;
 use crate::config::Config;
 use crate::constants::{EMAIL_PAGE_SIZE, PREFETCH_DEBOUNCE_MS};

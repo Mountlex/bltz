@@ -4,7 +4,7 @@ use anyhow::Context;
 
 use crate::config::{AccountConfig, AuthMethod, ImapConfig, SmtpConfig};
 use crate::credentials::CredentialStore;
-use crate::oauth2::{get_client_id, get_client_secret, GmailOAuth2};
+use crate::oauth2::{GmailOAuth2, get_client_id, get_client_secret};
 use crate::ui::app::{AddAccountAuth, AddAccountStep, View};
 
 use super::super::App;

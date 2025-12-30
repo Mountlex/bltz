@@ -5,7 +5,7 @@ pub mod thread;
 pub mod types;
 
 pub use imap::{
-    folder_cache_key, spawn_imap_actor, ImapActorHandle, ImapClient, ImapCommand, ImapEvent,
+    ImapActorHandle, ImapClient, ImapCommand, ImapEvent, folder_cache_key, spawn_imap_actor,
 };
 pub use smtp::SmtpClient;
-pub use thread::{group_into_threads, EmailThread, ThreadId};
+pub use thread::{EmailThread, ThreadId, group_into_threads};

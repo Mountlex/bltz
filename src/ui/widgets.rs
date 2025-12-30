@@ -1,16 +1,16 @@
 //! Common UI widgets and utilities
 
 use ratatui::{
+    Frame,
     layout::Rect,
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
 use super::theme::Theme;
 
 // Re-export status bar items for backwards compatibility
-pub use super::status_bar::{enhanced_status_bar, status_bar, StatusInfo};
+pub use super::status_bar::{StatusInfo, enhanced_status_bar, status_bar};
 
 pub fn error_bar(frame: &mut Frame, area: Rect, message: &str) {
     let style = Theme::error_bar();
@@ -118,7 +118,7 @@ pub fn sanitize_text(text: &str) -> String {
             // Skip the escape sequence
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
-                              // Skip until we hit a letter (end of sequence)
+                // Skip until we hit a letter (end of sequence)
                 while let Some(&ch) = chars.peek() {
                     chars.next();
                     if ch.is_ascii_alphabetic() {

@@ -343,11 +343,12 @@ mod tests {
     #[test]
     fn test_env_password() {
         let _guard = ENV_MUTEX.lock().unwrap();
-        env::set_var(ENV_PASSWORD, "test123");
+        // SAFETY: Protected by ENV_MUTEX and only used in single-threaded test context
+        unsafe { env::set_var(ENV_PASSWORD, "test123") };
         let store = CredentialStore::new("test@example.com");
         assert!(store.has_credentials());
         assert_eq!(store.get_imap_password().unwrap(), "test123");
-        env::remove_var(ENV_PASSWORD);
+        unsafe { env::remove_var(ENV_PASSWORD) };
     }
 
     #[test]
@@ -357,14 +358,18 @@ mod tests {
         let store2 = CredentialStore::new("user2@example.com");
 
         assert_ne!(store1.password_file, store2.password_file);
-        assert!(store1
-            .password_file
-            .to_string_lossy()
-            .contains("user1_example_com"));
-        assert!(store2
-            .password_file
-            .to_string_lossy()
-            .contains("user2_example_com"));
+        assert!(
+            store1
+                .password_file
+                .to_string_lossy()
+                .contains("user1_example_com")
+        );
+        assert!(
+            store2
+                .password_file
+                .to_string_lossy()
+                .contains("user2_example_com")
+        );
     }
 
     #[test]
@@ -394,8 +399,8 @@ mod tests {
     #[test]
     fn test_file_fallback_isolation() {
         let _guard = ENV_MUTEX.lock().unwrap();
-        // Ensure env var doesn't interfere
-        env::remove_var(ENV_PASSWORD);
+        // SAFETY: Protected by ENV_MUTEX
+        unsafe { env::remove_var(ENV_PASSWORD) };
 
         // Create temp stores with unique emails for this test
         let email1 = format!("test_isolation_1_{}@example.com", std::process::id());
@@ -435,10 +440,11 @@ mod tests {
         let info = store.debug_info();
 
         // Should have a valid file path
-        assert!(info
-            .file_path
-            .to_string_lossy()
-            .contains("debug_test_example_com"));
+        assert!(
+            info.file_path
+                .to_string_lossy()
+                .contains("debug_test_example_com")
+        );
 
         // Display should work
         let display = format!("{}", info);
@@ -461,20 +467,22 @@ mod tests {
         store.file_set("file_password").unwrap();
 
         // Now set env var - it should take priority
-        env::set_var(ENV_PASSWORD, "env_password");
+        // SAFETY: Protected by ENV_MUTEX
+        unsafe { env::set_var(ENV_PASSWORD, "env_password") };
 
         assert_eq!(store.get_imap_password().unwrap(), "env_password");
         assert_eq!(store.get_smtp_password().unwrap(), "env_password");
 
         // Clean up
-        env::remove_var(ENV_PASSWORD);
+        unsafe { env::remove_var(ENV_PASSWORD) };
         let _ = fs::remove_file(&store.password_file);
     }
 
     #[test]
     fn test_has_credentials_file_fallback() {
         let _guard = ENV_MUTEX.lock().unwrap();
-        env::remove_var(ENV_PASSWORD);
+        // SAFETY: Protected by ENV_MUTEX
+        unsafe { env::remove_var(ENV_PASSWORD) };
 
         let email = format!("has_creds_test_{}@example.com", std::process::id());
         let store = CredentialStore::new(&email);

@@ -2,14 +2,14 @@
 
 use anyhow::Result;
 use crossterm::event;
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 use std::time::{Duration, Instant};
 
 use crate::constants::{DELETION_DELAY_SECS, SEARCH_DEBOUNCE_MS};
-use crate::input::{handle_input, InputResult};
+use crate::input::{InputResult, handle_input};
 use crate::mail::types::EmailFlags;
-use crate::mail::{folder_cache_key, group_into_threads, ImapCommand, ImapEvent};
+use crate::mail::{ImapCommand, ImapEvent, folder_cache_key, group_into_threads};
 use crate::ui::app::{ModalState, View};
 
 use super::{App, EMAIL_PAGE_SIZE};

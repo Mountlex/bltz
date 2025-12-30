@@ -15,7 +15,7 @@ mod ui;
 
 use anyhow::Result;
 use std::env;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::app::App;
 use crate::config::Config;

@@ -1,15 +1,15 @@
 //! Status bar rendering with connection indicators and account badges
 
 use ratatui::{
+    Frame,
     layout::Rect,
     style::Style,
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
 use super::app::OtherAccountInfo;
-use super::theme::{symbols, Theme};
+use super::theme::{Theme, symbols};
 use crate::constants::SPINNER_FRAME_MS;
 
 /// Get current process memory usage (RSS) in bytes

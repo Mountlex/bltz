@@ -1,7 +1,7 @@
 [package]
 name = "bltz"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "A fast, secure terminal email client"
 license = "MIT"
 authors = ["Alexander Lindermayr"]
@@ -10,7 +10,7 @@ homepage = "https://github.com/Mountlex/bltz"
 readme = "README.md"
 keywords = ["email", "terminal", "tui", "imap", "smtp"]
 categories = ["command-line-utilities", "email"]
-rust-version = "1.84"
+rust-version = "1.85"
 
 [dependencies]
 # Async runtime

@@ -2,7 +2,7 @@
 
 use crate::app::undo::UndoableAction;
 use crate::mail::types::EmailFlags;
-use crate::mail::{group_into_threads, ImapCommand};
+use crate::mail::{ImapCommand, group_into_threads};
 
 use super::super::App;
 
