@@ -96,14 +96,12 @@ impl App {
             .unwrap_or_default();
 
         // If current email is now cached, load it
-        if let Some(cur_uid) = current_uid {
-            if cached_uids.contains(&cur_uid) && self.state.reader.body.is_none() {
-                if let Ok(Some(body)) = self.cache.get_email_body(&cache_key, cur_uid).await {
+        if let Some(cur_uid) = current_uid
+            && cached_uids.contains(&cur_uid) && self.state.reader.body.is_none()
+                && let Ok(Some(body)) = self.cache.get_email_body(&cache_key, cur_uid).await {
                     self.state.reader.body = Some(body);
                     self.last_prefetch_uid = Some(cur_uid);
                 }
-            }
-        }
 
         // Filter to only uncached UIDs
         let uids_to_fetch: Vec<u32> = uids

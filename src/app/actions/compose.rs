@@ -349,8 +349,7 @@ impl App {
             .autocomplete
             .suggestions
             .get(self.state.autocomplete.selected)
-        {
-            if let View::Composer {
+            && let View::Composer {
                 ref mut email,
                 field,
             } = self.state.view
@@ -376,7 +375,6 @@ impl App {
                     *field_value = format!("{}, ", contact.email);
                 }
             }
-        }
         self.state.autocomplete.visible = false;
         self.state.autocomplete.suggestions.clear();
     }

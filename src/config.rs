@@ -321,11 +321,10 @@ impl Config {
             .with_context(|| format!("Failed to read config file: {}", path.display()))?;
 
         // Try parsing as new multi-account format first
-        if let Ok(config) = toml::from_str::<Config>(&content) {
-            if !config.accounts.is_empty() {
+        if let Ok(config) = toml::from_str::<Config>(&content)
+            && !config.accounts.is_empty() {
                 return Ok(config);
             }
-        }
 
         // Fall back to legacy single-account format
         let legacy: LegacyConfig = toml::from_str(&content)

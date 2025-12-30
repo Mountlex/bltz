@@ -107,13 +107,12 @@ impl App {
         }
 
         // Check if we have a cached summary for this thread
-        if let Some((ref cached_id, _)) = self.state.reader.cached_thread_summary {
-            if *cached_id == thread.id {
+        if let Some((ref cached_id, _)) = self.state.reader.cached_thread_summary
+            && *cached_id == thread.id {
                 // Already have summary, just toggle view
                 self.state.reader.show_summary = true;
                 return;
             }
-        }
 
         // Collect thread emails (we need bodies, which may not be cached)
         // For now, collect what we have from headers
@@ -185,14 +184,12 @@ impl App {
 
     /// Accept the polished text and apply it to the composer
     pub(crate) fn accept_polish(&mut self) {
-        if let Some(preview) = self.state.polish.preview.take() {
-            if !preview.loading && !preview.polished.is_empty() {
-                if let View::Composer { ref mut email, .. } = self.state.view {
+        if let Some(preview) = self.state.polish.preview.take()
+            && !preview.loading && !preview.polished.is_empty()
+                && let View::Composer { ref mut email, .. } = self.state.view {
                     email.body = preview.polished;
                     self.state.set_status("Polish applied");
                 }
-            }
-        }
     }
 
     /// Reject the polished text and keep the original

@@ -71,11 +71,10 @@ impl App {
         }
 
         // Update autocomplete after typing in To or Cc field
-        if let View::Composer { field, .. } = self.state.view {
-            if field == ComposerField::To || field == ComposerField::Cc {
+        if let View::Composer { field, .. } = self.state.view
+            && (field == ComposerField::To || field == ComposerField::Cc) {
                 self.update_autocomplete().await;
             }
-        }
     }
 
     pub(crate) async fn handle_backspace(&mut self) {
@@ -148,10 +147,9 @@ impl App {
         }
 
         // Update autocomplete after backspace in To or Cc field
-        if let View::Composer { field, .. } = self.state.view {
-            if field == ComposerField::To || field == ComposerField::Cc {
+        if let View::Composer { field, .. } = self.state.view
+            && (field == ComposerField::To || field == ComposerField::Cc) {
                 self.update_autocomplete().await;
             }
-        }
     }
 }

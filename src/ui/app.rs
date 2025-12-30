@@ -262,11 +262,10 @@ impl StatusState {
 
     /// Clear error if it's been visible for more than the TTL
     pub fn clear_error_if_expired(&mut self) {
-        if let Some(time) = self.error_time {
-            if time.elapsed().as_secs() >= ERROR_TTL_SECS {
+        if let Some(time) = self.error_time
+            && time.elapsed().as_secs() >= ERROR_TTL_SECS {
                 self.clear_error();
             }
-        }
     }
 
     pub fn set_message(&mut self, msg: impl ToString) {
@@ -496,8 +495,8 @@ impl AppState {
             return;
         }
 
-        if let Some(thread) = visible.get(self.thread.selected) {
-            if self.is_thread_expanded(&thread.id) {
+        if let Some(thread) = visible.get(self.thread.selected)
+            && self.is_thread_expanded(&thread.id) {
                 // In expanded thread
                 let max_in_thread = thread.len();
                 if self.thread.selected_in_thread < max_in_thread {
@@ -505,7 +504,6 @@ impl AppState {
                     return;
                 }
             }
-        }
 
         // Move to next thread
         if self.thread.selected < visible.len() - 1 {
@@ -529,33 +527,30 @@ impl AppState {
         if self.thread.selected > 0 {
             self.thread.selected -= 1;
             // If moving into an expanded thread, go to its last item
-            if let Some(thread) = self.current_thread() {
-                if self.is_thread_expanded(&thread.id) {
+            if let Some(thread) = self.current_thread()
+                && self.is_thread_expanded(&thread.id) {
                     self.thread.selected_in_thread = thread.len();
                 }
-            }
         }
     }
 
     /// Collapse current thread and move up
     pub fn collapse_or_move_left(&mut self) {
-        if let Some(thread) = self.current_thread() {
-            if self.is_thread_expanded(&thread.id) {
+        if let Some(thread) = self.current_thread()
+            && self.is_thread_expanded(&thread.id) {
                 let id = thread.id.clone();
                 self.thread.expanded.remove(&id);
                 self.thread.selected_in_thread = 0;
             }
-        }
     }
 
     /// Expand current thread
     pub fn expand_thread(&mut self) {
-        if let Some(thread) = self.current_thread() {
-            if thread.total_count > 1 && !self.is_thread_expanded(&thread.id) {
+        if let Some(thread) = self.current_thread()
+            && thread.total_count > 1 && !self.is_thread_expanded(&thread.id) {
                 let id = thread.id.clone();
                 self.thread.expanded.insert(id);
             }
-        }
     }
 
     // Delegate methods to StatusState
@@ -579,8 +574,8 @@ impl AppState {
     /// Uses cached indices when possible (1000x faster for repeated calls).
     pub fn visible_threads(&self) -> Vec<&EmailThread> {
         // Check if we have valid cached results
-        if let Some(ref indices) = self.search.cached_visible_indices {
-            if self.search.query == self.search.cached_query
+        if let Some(ref indices) = self.search.cached_visible_indices
+            && self.search.query == self.search.cached_query
                 && self.view_mode == self.search.cached_view_mode
             {
                 return indices
@@ -588,7 +583,6 @@ impl AppState {
                     .filter_map(|&i| self.thread.threads.get(i))
                     .collect();
             }
-        }
 
         // Cache miss - compute and return (caller should call invalidate_search_cache on changes)
         self.compute_visible_threads()
@@ -809,13 +803,12 @@ impl AppState {
             let in_thread = self.thread.selected_in_thread;
             for offset in 1..=radius {
                 // Email below in thread
-                if in_thread > 0 && in_thread - 1 + offset < current_thread.len() {
-                    if let Some(email) =
+                if in_thread > 0 && in_thread - 1 + offset < current_thread.len()
+                    && let Some(email) =
                         current_thread.email_at(&self.emails, in_thread - 1 + offset)
                     {
                         add_uid(email.uid);
                     }
-                }
                 // Email above in thread
                 if in_thread > offset {
                     if let Some(email) =
