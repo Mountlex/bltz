@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Bltz! This document provides guid
 
 ### Prerequisites
 
-- Rust 1.75 or later
+- Rust 1.92 or later
 - A system keyring (for credential storage)
 - An email account for testing
 
