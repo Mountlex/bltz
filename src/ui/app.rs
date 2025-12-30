@@ -355,6 +355,8 @@ pub struct ReaderState {
     pub cached_summary: Option<(u32, String)>,
     pub cached_thread_summary: Option<(ThreadId, String)>,
     pub summary_loading: bool,
+    /// Whether email headers in preview are expanded (show all lines instead of 3 per field)
+    pub headers_expanded: bool,
 }
 
 impl ReaderState {

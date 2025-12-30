@@ -2,7 +2,7 @@
 name = "bltz"
 version = "0.1.0"
 edition = "2024"
-description = "A fast, secure terminal email client"
+description = "A fast terminal email client"
 license = "MIT"
 authors = ["Alexander Lindermayr"]
 repository = "https://github.com/Mountlex/bltz"

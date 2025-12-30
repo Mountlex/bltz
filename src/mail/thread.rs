@@ -251,6 +251,7 @@ mod tests {
             from_addr: "test@example.com".to_string(),
             from_name: None,
             to_addr: None,
+            cc_addr: None,
             date,
             flags: EmailFlags::empty(),
             has_attachments: false,

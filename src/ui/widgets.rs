@@ -10,7 +10,7 @@ use ratatui::{
 use super::theme::Theme;
 
 // Re-export status bar items for backwards compatibility
-pub use super::status_bar::{StatusInfo, enhanced_status_bar, status_bar};
+pub use super::status_bar::{StatusInfo, enhanced_status_bar, spinner_char, status_bar};
 
 pub fn error_bar(frame: &mut Frame, area: Rect, message: &str) {
     let style = Theme::error_bar();

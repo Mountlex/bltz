@@ -104,6 +104,7 @@ impl Cache {
                 from_addr TEXT NOT NULL DEFAULT '',
                 from_name TEXT,
                 to_addr TEXT,
+                cc_addr TEXT,
                 date INTEGER NOT NULL,
                 flags INTEGER NOT NULL DEFAULT 0,
                 has_attachments INTEGER NOT NULL DEFAULT 0,
@@ -324,8 +325,8 @@ impl Cache {
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO emails
-            (uid, account_id, message_id, subject, from_addr, from_name, to_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (uid, account_id, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(header.uid as i64)
@@ -335,6 +336,7 @@ impl Cache {
         .bind(&header.from_addr)
         .bind(&header.from_name)
         .bind(&header.to_addr)
+        .bind(&header.cc_addr)
         .bind(header.date)
         .bind(header.flags.bits() as i64)
         .bind(header.has_attachments)
@@ -360,8 +362,8 @@ impl Cache {
             sqlx::query(
                 r#"
                 INSERT OR REPLACE INTO emails
-                (uid, account_id, message_id, subject, from_addr, from_name, to_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (uid, account_id, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(header.uid as i64)
@@ -371,6 +373,7 @@ impl Cache {
             .bind(&header.from_addr)
             .bind(&header.from_name)
             .bind(&header.to_addr)
+            .bind(&header.cc_addr)
             .bind(header.date)
             .bind(header.flags.bits() as i64)
             .bind(header.has_attachments)
@@ -395,7 +398,7 @@ impl Cache {
     ) -> Result<Vec<EmailHeader>> {
         let rows = sqlx::query(
             r#"
-            SELECT uid, message_id, subject, from_addr, from_name, to_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
+            SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
             FROM emails
             WHERE account_id = ?
             ORDER BY date DESC
@@ -422,7 +425,7 @@ impl Cache {
             Some(date) => {
                 sqlx::query(
                     r#"
-                    SELECT uid, message_id, subject, from_addr, from_name, to_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
+                    SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
                     FROM emails
                     WHERE account_id = ? AND date < ?
                     ORDER BY date DESC
@@ -438,7 +441,7 @@ impl Cache {
             None => {
                 sqlx::query(
                     r#"
-                    SELECT uid, message_id, subject, from_addr, from_name, to_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
+                    SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
                     FROM emails
                     WHERE account_id = ?
                     ORDER BY date DESC
@@ -467,6 +470,7 @@ impl Cache {
             from_addr: row.get("from_addr"),
             from_name: row.get("from_name"),
             to_addr: row.get("to_addr"),
+            cc_addr: row.get("cc_addr"),
             date: row.get("date"),
             flags: EmailFlags::from_bits_truncate(row.get::<i64, _>("flags") as u32),
             has_attachments: row.get("has_attachments"),
@@ -480,7 +484,7 @@ impl Cache {
     pub async fn get_email(&self, account_id: &str, uid: u32) -> Result<Option<EmailHeader>> {
         let row = sqlx::query(
             r#"
-            SELECT uid, message_id, subject, from_addr, from_name, to_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
+            SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
             FROM emails
             WHERE account_id = ? AND uid = ?
             "#,
@@ -720,6 +724,7 @@ mod tests {
             from_addr: "sender@example.com".to_string(),
             from_name: Some("Sender".to_string()),
             to_addr: Some("recipient@example.com".to_string()),
+            cc_addr: None,
             date: 1234567890,
             flags: EmailFlags::empty(),
             has_attachments: false,
@@ -760,6 +765,7 @@ mod tests {
             from_addr: "sender@example.com".to_string(),
             from_name: None,
             to_addr: None,
+            cc_addr: None,
             date: 1000,
             flags: EmailFlags::empty(),
             has_attachments: false,
@@ -776,6 +782,7 @@ mod tests {
             from_addr: "sender@example.com".to_string(),
             from_name: None,
             to_addr: None,
+            cc_addr: None,
             date: 2000,
             flags: EmailFlags::SEEN,
             has_attachments: false,

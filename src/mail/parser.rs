@@ -9,11 +9,23 @@ pub fn parse_envelope(uid: u32, raw: &[u8], flags: EmailFlags) -> Option<EmailHe
     let from_addr = from.address()?.to_string();
     let from_name = from.name().map(|s| s.to_string());
 
-    let to_addr = message
-        .to()
-        .and_then(|addrs| addrs.first())
-        .and_then(|addr| addr.address())
-        .map(|s| s.to_string());
+    // Extract all To recipients (comma-separated)
+    let to_addr = message.to().map(|addrs| {
+        addrs
+            .iter()
+            .filter_map(|addr| addr.address())
+            .collect::<Vec<_>>()
+            .join(", ")
+    });
+
+    // Extract all CC recipients (comma-separated)
+    let cc_addr = message.cc().map(|addrs| {
+        addrs
+            .iter()
+            .filter_map(|addr| addr.address())
+            .collect::<Vec<_>>()
+            .join(", ")
+    });
 
     let subject = message.subject().map(|s| s.to_string()).unwrap_or_default();
 
@@ -44,6 +56,7 @@ pub fn parse_envelope(uid: u32, raw: &[u8], flags: EmailFlags) -> Option<EmailHe
         from_addr,
         from_name,
         to_addr,
+        cc_addr,
         date,
         flags,
         has_attachments,

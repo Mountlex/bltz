@@ -74,6 +74,9 @@ pub enum Action {
     AcceptPolish,    // Accept polished text
     RejectPolish,    // Reject polished text
 
+    // Preview
+    ToggleHeaderExpand, // Expand/collapse headers in preview
+
     // Help
     Help, // Toggle help view
 }
@@ -179,6 +182,9 @@ impl KeyBindings {
         map.insert(ctrl_key('t'), Action::SummarizeThread);
         map.insert(ctrl_key('p'), Action::Polish);
 
+        // Preview
+        map.insert(shift_key('H'), Action::ToggleHeaderExpand);
+
         // Help
         map.insert(key('.'), Action::Help);
 
@@ -243,6 +249,9 @@ impl KeyBindings {
         map.insert(key_code(KeyCode::F(7)), Action::ToggleSummary);
         map.insert(key_code(KeyCode::F(8)), Action::SummarizeThread);
         map.insert(ctrl_key('p'), Action::Polish);
+
+        // Preview
+        map.insert(shift_key('H'), Action::ToggleHeaderExpand);
 
         // Help
         map.insert(key('.'), Action::Help);
@@ -365,6 +374,7 @@ fn action_description(action: &Action) -> String {
         Action::Polish => "Polish writing (AI)".to_string(),
         Action::AcceptPolish => "Accept polished text".to_string(),
         Action::RejectPolish => "Reject polished text".to_string(),
+        Action::ToggleHeaderExpand => "Expand/collapse headers".to_string(),
         Action::Help => "Toggle help".to_string(),
     }
 }
@@ -399,7 +409,8 @@ fn action_category(action: &Action) -> &'static str {
         | Action::Search
         | Action::FolderPicker
         | Action::Undo
-        | Action::OpenContacts => "Actions",
+        | Action::OpenContacts
+        | Action::ToggleHeaderExpand => "Actions",
 
         Action::EditContact => "Contacts",
 

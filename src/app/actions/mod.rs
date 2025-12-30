@@ -183,6 +183,11 @@ impl App {
             Action::AcceptPolish => self.accept_polish(),
             Action::RejectPolish => self.reject_polish(),
 
+            // Preview
+            Action::ToggleHeaderExpand => {
+                self.state.reader.headers_expanded = !self.state.reader.headers_expanded;
+            }
+
             // Help
             Action::Help => {
                 self.toggle_help();

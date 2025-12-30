@@ -8,22 +8,27 @@ use ratatui::{
 use super::app::AppState;
 use super::theme::Theme;
 use super::widgets::{
-    StatusInfo, enhanced_status_bar, error_bar, format_date, help_bar, sanitize_text,
+    StatusInfo, enhanced_status_bar, error_bar, format_date, help_bar, sanitize_text, spinner_char,
 };
 
 pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
+    // Find the email first to determine header height
+    let email = state.emails.iter().find(|e| e.uid == uid);
+    // Check if CC has actual content (not empty)
+    let has_cc = email
+        .and_then(|e| e.cc_addr.as_ref())
+        .is_some_and(|cc| !cc.trim().is_empty());
+    let header_lines = if has_cc { 6 } else { 5 };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Status bar
-            Constraint::Length(5), // Headers
-            Constraint::Min(0),    // Body
-            Constraint::Length(1), // Help bar
+            Constraint::Length(1),            // Status bar
+            Constraint::Length(header_lines), // Headers
+            Constraint::Min(0),               // Body
+            Constraint::Length(1),            // Help bar
         ])
         .split(frame.area());
-
-    // Find the email
-    let email = state.emails.iter().find(|e| e.uid == uid);
 
     // Enhanced status bar (same as inbox)
     let folder_name = if state.folder.current.is_empty() {
@@ -107,7 +112,7 @@ fn render_headers(
     let label_style = Theme::label();
     let value_style = Theme::text();
 
-    let lines = vec![
+    let mut lines = vec![
         Line::from(vec![
             Span::styled("From:    ", label_style),
             Span::styled(
@@ -123,15 +128,26 @@ fn render_headers(
             Span::styled("To:      ", label_style),
             Span::styled(email.to_addr.as_deref().unwrap_or(""), value_style),
         ]),
-        Line::from(vec![
-            Span::styled("Date:    ", label_style),
-            Span::styled(format_date(email.date), value_style),
-        ]),
-        Line::from(vec![
-            Span::styled("Subject: ", label_style),
-            Span::styled(&email.subject, Theme::text_unread()),
-        ]),
     ];
+
+    // Add CC line if present and non-empty
+    if let Some(ref cc) = email.cc_addr
+        && !cc.trim().is_empty()
+    {
+        lines.push(Line::from(vec![
+            Span::styled("Cc:      ", label_style),
+            Span::styled(cc.as_str(), value_style),
+        ]));
+    }
+
+    lines.push(Line::from(vec![
+        Span::styled("Date:    ", label_style),
+        Span::styled(format_date(email.date), value_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("Subject: ", label_style),
+        Span::styled(&email.subject, Theme::text_unread()),
+    ]));
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, inner);
@@ -143,7 +159,7 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
     frame.render_widget(block, area);
 
     let body_text: String = if state.reader.summary_loading {
-        "Generating AI summary...".to_string()
+        format!("{} Generating AI summary...", spinner_char())
     } else if state.reader.show_summary {
         // Show AI summary if available
         if let Some((cached_uid, ref summary)) = state.reader.cached_summary {
@@ -181,7 +197,7 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
     } else if let Some(ref body) = state.reader.body {
         body.display_text()
     } else if state.status.loading {
-        "Loading...".to_string()
+        format!("{} Loading...", spinner_char())
     } else {
         "[No content]".to_string()
     };

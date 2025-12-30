@@ -20,6 +20,7 @@ pub struct EmailHeader {
     pub from_addr: String,
     pub from_name: Option<String>,
     pub to_addr: Option<String>,
+    pub cc_addr: Option<String>,
     pub date: i64,
     pub flags: EmailFlags,
     pub has_attachments: bool,
@@ -198,6 +199,20 @@ impl ComposeEmail {
                 let addr = addr.trim();
                 // Skip our own email
                 if !addr.eq_ignore_ascii_case(my_email) && !addr.is_empty() {
+                    cc_addrs.push(addr.to_string());
+                }
+            }
+        }
+
+        // Add original CC recipients (could be multiple comma-separated)
+        if let Some(ref cc_addr) = original.cc_addr {
+            for addr in cc_addr.split(',') {
+                let addr = addr.trim();
+                // Skip our own email and avoid duplicates
+                if !addr.eq_ignore_ascii_case(my_email)
+                    && !addr.is_empty()
+                    && !cc_addrs.iter().any(|a| a.eq_ignore_ascii_case(addr))
+                {
                     cc_addrs.push(addr.to_string());
                 }
             }

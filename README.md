@@ -1,6 +1,6 @@
 # Bltz
 
-A fast, secure terminal email client written in Rust.
+A fast terminal email client written in Rust.
 
 [![CI](https://github.com/Mountlex/bltz/actions/workflows/ci.yml/badge.svg)](https://github.com/Mountlex/bltz/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -134,12 +134,14 @@ Logs are written to `~/.config/bltz/bltz.log`.
 | `g` / `G` | Go to top / bottom |
 | `Ctrl+d` / `Ctrl+u` | Page down / up |
 | `Enter` | Open email |
-| `q` | Quit / back |
+| `Esc` | Back |
+| `q` | Quit |
 | `Tab` / `Space` | Toggle thread |
 | `[` / `]` | Switch accounts |
 | `b` | Folder picker |
 | `/` | Search |
 | `:` | Command mode |
+| `.` | Help |
 
 ### Actions
 

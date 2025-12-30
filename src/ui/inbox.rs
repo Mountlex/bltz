@@ -399,17 +399,62 @@ fn render_preview(frame: &mut Frame, area: Rect, state: &AppState) {
     let email = state.current_email_from_thread();
 
     if let Some(email) = email {
-        // Split into header and body sections
+        let expanded = state.reader.headers_expanded;
+
+        // Check if CC has actual content (not empty)
+        let has_cc = email
+            .cc_addr
+            .as_ref()
+            .is_some_and(|cc| !cc.trim().is_empty());
+
+        // Calculate header height based on actual content
+        // Label width is 9 chars ("Subject: "), so value area is width - 9
+        let value_width = inner.width.saturating_sub(9) as usize;
+
+        // Helper to calculate lines needed for a field value
+        let lines_for_field = |text: &str| -> u16 {
+            if text.is_empty() || value_width == 0 {
+                1
+            } else {
+                text.len().div_ceil(value_width).max(1) as u16
+            }
+        };
+
+        let from_display = if let Some(ref name) = email.from_name {
+            format!("{} <{}>", name, email.from_addr)
+        } else {
+            email.from_addr.clone()
+        };
+
+        let header_lines = if expanded {
+            // Calculate actual lines needed for each field when wrapped
+            let from_lines = lines_for_field(&from_display);
+            let to_lines = lines_for_field(email.to_addr.as_deref().unwrap_or(""));
+            let cc_lines = if has_cc {
+                lines_for_field(email.cc_addr.as_deref().unwrap_or(""))
+            } else {
+                0
+            };
+            let date_lines = 1; // Date is always short
+            let subject_lines = lines_for_field(&email.subject);
+
+            (from_lines + to_lines + cc_lines + date_lines + subject_lines)
+                .min(inner.height.saturating_sub(5))
+        } else {
+            // Collapsed: 1 line per field
+            4 + if has_cc { 1 } else { 0 }
+        };
+
         let sections = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(5), // Headers
-                Constraint::Min(0),    // Body
+                Constraint::Length(header_lines + 1), // Headers + border
+                Constraint::Min(0),                   // Body
             ])
             .split(inner);
 
         // Render headers
-        render_email_headers(frame, sections[0], email);
+        render_email_headers(frame, sections[0], email, expanded);
 
         // Render body
         render_email_body(frame, sections[1], state);
@@ -421,7 +466,7 @@ fn render_preview(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 }
 
-fn render_email_headers(frame: &mut Frame, area: Rect, email: &EmailHeader) {
+fn render_email_headers(frame: &mut Frame, area: Rect, email: &EmailHeader, expanded: bool) {
     let block = Block::default()
         .borders(Borders::BOTTOM)
         .border_style(Theme::border());
@@ -438,26 +483,49 @@ fn render_email_headers(frame: &mut Frame, area: Rect, email: &EmailHeader) {
         email.from_addr.clone()
     };
 
-    let lines = vec![
-        Line::from(vec![
-            Span::styled("From:    ", label_style),
-            Span::styled(from_display, value_style),
-        ]),
-        Line::from(vec![
-            Span::styled("To:      ", label_style),
-            Span::styled(email.to_addr.as_deref().unwrap_or(""), value_style),
-        ]),
-        Line::from(vec![
-            Span::styled("Date:    ", label_style),
-            Span::styled(format_date(email.date), value_style),
-        ]),
-        Line::from(vec![
-            Span::styled("Subject: ", label_style),
-            Span::styled(&email.subject, Theme::text_unread()),
-        ]),
-    ];
+    let mut lines: Vec<Line> = Vec::new();
 
-    let paragraph = Paragraph::new(lines);
+    // From
+    lines.push(Line::from(vec![
+        Span::styled("From:    ", label_style),
+        Span::styled(from_display, value_style),
+    ]));
+
+    // To
+    lines.push(Line::from(vec![
+        Span::styled("To:      ", label_style),
+        Span::styled(email.to_addr.as_deref().unwrap_or(""), value_style),
+    ]));
+
+    // CC (if present and non-empty)
+    if let Some(ref cc) = email.cc_addr
+        && !cc.trim().is_empty()
+    {
+        lines.push(Line::from(vec![
+            Span::styled("Cc:      ", label_style),
+            Span::styled(cc.as_str(), value_style),
+        ]));
+    }
+
+    // Date
+    lines.push(Line::from(vec![
+        Span::styled("Date:    ", label_style),
+        Span::styled(format_date(email.date), value_style),
+    ]));
+
+    // Subject
+    lines.push(Line::from(vec![
+        Span::styled("Subject: ", label_style),
+        Span::styled(&email.subject, Theme::text_unread()),
+    ]));
+
+    // Use Paragraph with Wrap when expanded to allow natural wrapping
+    let paragraph = if expanded {
+        Paragraph::new(lines).wrap(Wrap { trim: false })
+    } else {
+        Paragraph::new(lines)
+    };
+
     frame.render_widget(paragraph, inner);
 }
 
