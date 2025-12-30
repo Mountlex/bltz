@@ -84,6 +84,10 @@ impl App {
                 // Keep search query so results stay filtered (Esc just closes input)
                 return;
             }
+            ModalState::Help { .. } => {
+                self.state.modal = ModalState::None;
+                return;
+            }
             ModalState::None => {}
         }
 

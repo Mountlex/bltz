@@ -187,7 +187,7 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
         help_bar(frame, help_area, hints);
     } else {
         // Default help bar for discoverability
-        let hints = &[("j/k", "nav"), ("Enter", "open"), (":help", "cmds")];
+        let hints = &[("j/k", "nav"), ("Enter", "open"), (".", "help")];
         help_bar(frame, help_area, hints);
     }
 
@@ -196,15 +196,14 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
         render_folder_picker(frame, frame.area(), state);
     }
 
-    // Help/Keybindings popups (rendered last so they appear on top)
-    match state.modal.command_result() {
-        Some(CommandResult::ShowKeys(ref keys)) => {
-            render_keybindings_popup(frame, frame.area(), keys);
-        }
-        Some(CommandResult::ShowHelp(ref commands)) => {
-            render_help_popup(frame, frame.area(), commands);
-        }
-        _ => {}
+    // Help popup (rendered last so it appears on top)
+    if let super::app::ModalState::Help {
+        ref keybindings,
+        ref commands,
+        scroll,
+    } = state.modal
+    {
+        render_unified_help_popup(frame, frame.area(), keybindings, commands, scroll);
     }
 }
 
@@ -242,14 +241,6 @@ fn render_command_bar(frame: &mut Frame, area: Rect, state: &AppState) {
         let (text, style) = match result {
             CommandResult::Success(msg) => (msg.clone(), Theme::text()),
             CommandResult::Error(msg) => (msg.clone(), Theme::error_bar()),
-            CommandResult::ShowHelp(_) => {
-                // Help is shown as a popup, show hint in command bar
-                ("Press Esc to close".to_string(), Theme::text_muted())
-            }
-            CommandResult::ShowKeys(_) => {
-                // Keybindings are shown as a popup, show hint in command bar
-                ("Press Esc to close".to_string(), Theme::text_muted())
-            }
         };
         let paragraph = Paragraph::new(format!(" {} ", text)).style(style);
         frame.render_widget(paragraph, area);
@@ -779,8 +770,10 @@ fn render_thread_email(
     };
     let is_starred = email.is_flagged();
     let star_indicator = if is_starred { symbols::STARRED } else { " " };
+    let is_replied = email.is_answered();
+    let replied_indicator = if is_replied { symbols::REPLIED } else { " " };
 
-    let inner_indent = indent_width + 4; // indent + unread + attach + star + space
+    let inner_indent = indent_width + 5; // indent + unread + attach + star + replied + space
     let subject_width = width.saturating_sub(inner_indent);
 
     let _subject_display = truncate_string(&email.subject, subject_width);
@@ -822,6 +815,19 @@ fn render_thread_email(
         Style::default()
     };
 
+    // Replied indicator - muted when replied, must have selection bg when selected
+    let replied_style = if selected {
+        if is_replied {
+            Theme::replied_indicator_selected()
+        } else {
+            Theme::selected()
+        }
+    } else if is_replied {
+        Theme::replied_indicator()
+    } else {
+        Style::default()
+    };
+
     // Subject style
     let subject_style = if selected {
         Theme::selected()
@@ -857,6 +863,7 @@ fn render_thread_email(
         Span::styled(unread_indicator, unread_style),
         Span::styled(attachment_indicator, attach_style),
         Span::styled(star_indicator, star_style),
+        Span::styled(replied_indicator, replied_style),
         Span::styled(" ", base_style),
     ];
     line2_spans.extend(subject_spans);
@@ -943,19 +950,28 @@ fn render_folder_picker(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, inner);
 }
 
-/// Render the keybindings popup overlay
-fn render_keybindings_popup(frame: &mut Frame, area: Rect, keys: &[KeybindingEntry]) {
-    // Count unique categories to calculate height (category headers + items + spacing)
+/// Render the unified help popup (keybindings + commands)
+fn render_unified_help_popup(
+    frame: &mut Frame,
+    area: Rect,
+    keys: &[KeybindingEntry],
+    commands: &[CommandHelp],
+    scroll: usize,
+) {
+    // Count unique categories to calculate height
     let mut categories: Vec<&str> = Vec::new();
     for key in keys {
         if categories.last() != Some(&key.category) {
             categories.push(key.category);
         }
     }
-    let category_count = categories.len();
+    let keybinding_category_count = categories.len();
 
-    // Calculate popup size - account for category headers and spacing
-    let content_height = keys.len() + category_count * 2; // entries + header + blank line per category
+    // Calculate popup size - keybindings + commands section
+    let keybinding_lines = keys.len() + keybinding_category_count * 2;
+    let command_lines = commands.len() + 2; // header + blank line + entries
+    let content_height = keybinding_lines + command_lines + 1; // +1 for blank line separator
+
     let popup_width = 50.min(area.width.saturating_sub(4)).max(36);
     let popup_height = (content_height as u16 + 2)
         .min(area.height.saturating_sub(4))
@@ -971,19 +987,20 @@ fn render_keybindings_popup(frame: &mut Frame, area: Rect, keys: &[KeybindingEnt
 
     // Create the popup block
     let block = Block::default()
-        .title(" Keybindings ")
-        .title_bottom(" Esc to close ")
+        .title(" Help ")
+        .title_bottom(" j/k scroll │ . or Esc close ")
         .borders(Borders::ALL)
         .border_style(Theme::border_focused());
 
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
-    // Build keybinding list items with category headers
+    // Build combined list items
     let mut items: Vec<ListItem> = Vec::new();
     let mut current_category: Option<&str> = None;
     let key_width = 12;
 
+    // Add keybindings grouped by category
     for entry in keys {
         // Add category header if this is a new category
         if current_category != Some(entry.category) {
@@ -999,10 +1016,11 @@ fn render_keybindings_popup(frame: &mut Frame, area: Rect, keys: &[KeybindingEnt
                     Theme::text_secondary().add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    "─"
-                        .repeat(
-                            inner.width.saturating_sub(entry.category.len() as u16 + 4) as usize
-                        ),
+                    "─".repeat(
+                        inner
+                            .width
+                            .saturating_sub(entry.category.len() as u16 + 4) as usize,
+                    ),
                     Theme::border(),
                 ),
             ]);
@@ -1027,53 +1045,34 @@ fn render_keybindings_popup(frame: &mut Frame, area: Rect, keys: &[KeybindingEnt
         items.push(ListItem::new(line));
     }
 
-    let list = List::new(items);
-    frame.render_widget(list, inner);
-}
+    // Add commands section
+    items.push(ListItem::new(Line::from("")));
+    let commands_header = Line::from(vec![
+        Span::styled(
+            "── Commands ",
+            Theme::text_secondary().add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "─".repeat(inner.width.saturating_sub(13) as usize),
+            Theme::border(),
+        ),
+    ]);
+    items.push(ListItem::new(commands_header));
 
-/// Render the help/commands popup overlay
-fn render_help_popup(frame: &mut Frame, area: Rect, commands: &[CommandHelp]) {
-    // Calculate popup size
-    let popup_width = 50.min(area.width.saturating_sub(4)).max(36);
-    let popup_height = (commands.len() as u16 + 4)
-        .min(area.height.saturating_sub(4))
-        .max(8);
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
-
-    // Clear the area behind the popup
-    frame.render_widget(Clear, popup_area);
-
-    // Create the popup block
-    let block = Block::default()
-        .title(" Commands ")
-        .title_bottom(" Esc to close ")
-        .borders(Borders::ALL)
-        .border_style(Theme::border_focused());
-
-    let inner = block.inner(popup_area);
-    frame.render_widget(block, popup_area);
-
-    // Build command list items
     let cmd_width = 14;
-    let items: Vec<ListItem> = commands
-        .iter()
-        .map(|cmd| {
-            let cmd_display = format!(":{:<width$}", cmd.name, width = cmd_width - 1);
+    for cmd in commands {
+        let cmd_display = format!(":{:<width$}", cmd.name, width = cmd_width - 1);
+        let line = Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(cmd_display, Theme::text_accent()),
+            Span::styled(cmd.description, Theme::text()),
+        ]);
+        items.push(ListItem::new(line));
+    }
 
-            let line = Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled(cmd_display, Theme::text_accent()),
-                Span::styled(cmd.description, Theme::text()),
-            ]);
+    // Apply scroll offset
+    let visible_items: Vec<ListItem> = items.into_iter().skip(scroll).collect();
 
-            ListItem::new(line)
-        })
-        .collect();
-
-    let list = List::new(items);
+    let list = List::new(visible_items);
     frame.render_widget(list, inner);
 }

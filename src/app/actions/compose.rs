@@ -2,8 +2,8 @@
 
 use crate::config::AuthMethod;
 use crate::credentials::CredentialStore;
-use crate::mail::types::{ComposeEmail, EmailHeader};
-use crate::mail::SmtpClient;
+use crate::mail::types::{ComposeEmail, EmailFlags, EmailHeader};
+use crate::mail::{ImapCommand, SmtpClient};
 use crate::ui::app::{ComposerField, View};
 
 use super::super::App;
@@ -49,7 +49,8 @@ impl App {
         };
 
         let body_text = self.get_email_body_text(uid).await;
-        let reply = ComposeEmail::reply_to(&email, &body_text);
+        let mut reply = ComposeEmail::reply_to(&email, &body_text);
+        reply.reply_to_uid = Some(uid); // Track original email for ANSWERED flag
         self.state.view = View::Composer {
             email: reply,
             field: ComposerField::Body,
@@ -74,7 +75,8 @@ impl App {
             .map(|h| h.config.email.as_str())
             .unwrap_or("");
 
-        let reply = ComposeEmail::reply_all(&email, &body_text, my_email);
+        let mut reply = ComposeEmail::reply_all(&email, &body_text, my_email);
+        reply.reply_to_uid = Some(uid); // Track original email for ANSWERED flag
         self.state.view = View::Composer {
             email: reply,
             field: ComposerField::Body,
@@ -216,6 +218,28 @@ impl App {
             Ok(_) => {
                 // Add recipient to contacts
                 self.contacts.add_or_update(&email.to, None).await.ok();
+
+                // Set ANSWERED flag on original email if this was a reply
+                if let Some(reply_to_uid) = email.reply_to_uid {
+                    // Update local state immediately (optimistic update)
+                    if let Some(original) = self
+                        .state
+                        .emails
+                        .iter_mut()
+                        .find(|e| e.uid == reply_to_uid)
+                    {
+                        original.flags.insert(EmailFlags::ANSWERED);
+                    }
+
+                    // Send IMAP command to server
+                    self.accounts
+                        .send_command(ImapCommand::SetFlag {
+                            uid: reply_to_uid,
+                            flag: EmailFlags::ANSWERED,
+                        })
+                        .await
+                        .ok();
+                }
 
                 let account_name = self
                     .state

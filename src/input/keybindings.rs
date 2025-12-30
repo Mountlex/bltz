@@ -73,6 +73,9 @@ pub enum Action {
     Polish,          // Polish/improve writing in composer
     AcceptPolish,    // Accept polished text
     RejectPolish,    // Reject polished text
+
+    // Help
+    Help, // Toggle help view
 }
 
 pub struct KeyBindings {
@@ -176,6 +179,9 @@ impl KeyBindings {
         map.insert(ctrl_key('t'), Action::SummarizeThread);
         map.insert(ctrl_key('p'), Action::Polish);
 
+        // Help
+        map.insert(key('.'), Action::Help);
+
         map
     }
 
@@ -237,6 +243,9 @@ impl KeyBindings {
         map.insert(key_code(KeyCode::F(7)), Action::ToggleSummary);
         map.insert(key_code(KeyCode::F(8)), Action::SummarizeThread);
         map.insert(ctrl_key('p'), Action::Polish);
+
+        // Help
+        map.insert(key('.'), Action::Help);
 
         map
     }
@@ -356,6 +365,7 @@ fn action_description(action: &Action) -> String {
         Action::Polish => "Polish writing (AI)".to_string(),
         Action::AcceptPolish => "Accept polished text".to_string(),
         Action::RejectPolish => "Reject polished text".to_string(),
+        Action::Help => "Toggle help".to_string(),
     }
 }
 
@@ -415,6 +425,8 @@ fn action_category(action: &Action) -> &'static str {
         | Action::Polish
         | Action::AcceptPolish
         | Action::RejectPolish => "AI",
+
+        Action::Help => "Help",
     }
 }
 
@@ -429,6 +441,7 @@ fn category_order(category: &str) -> u8 {
         "Commands" => 5,
         "Composer" => 6,
         "Wizard" => 7,
+        "Help" => 8,
         _ => 99,
     }
 }

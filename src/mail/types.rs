@@ -39,6 +39,10 @@ impl EmailHeader {
         self.flags.contains(EmailFlags::FLAGGED)
     }
 
+    pub fn is_answered(&self) -> bool {
+        self.flags.contains(EmailFlags::ANSWERED)
+    }
+
     pub fn display_from(&self) -> &str {
         self.from_name.as_deref().unwrap_or(&self.from_addr)
     }
@@ -80,6 +84,8 @@ pub struct ComposeEmail {
     pub references: Option<String>,
     /// Index of the account to send from (None = use currently active account)
     pub from_account_index: Option<usize>,
+    /// UID of the email being replied to (for setting ANSWERED flag after send)
+    pub reply_to_uid: Option<u32>,
 }
 
 impl ComposeEmail {
@@ -92,6 +98,7 @@ impl ComposeEmail {
             in_reply_to: None,
             references: None,
             from_account_index: None,
+            reply_to_uid: None,
         }
     }
 
@@ -142,6 +149,7 @@ impl ComposeEmail {
             in_reply_to: original.message_id.clone(),
             references,
             from_account_index: None,
+            reply_to_uid: None, // Set by caller with the original email's UID
         }
     }
 
@@ -207,6 +215,7 @@ impl ComposeEmail {
             in_reply_to: original.message_id.clone(),
             references,
             from_account_index: None,
+            reply_to_uid: None, // Set by caller with the original email's UID
         }
     }
 
@@ -239,6 +248,7 @@ impl ComposeEmail {
             in_reply_to: None, // Forward is not a reply
             references: None,
             from_account_index: None,
+            reply_to_uid: None, // Forward doesn't set ANSWERED flag
         }
     }
 }

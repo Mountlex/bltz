@@ -39,6 +39,11 @@ fn handle_key(key: KeyEvent, state: &AppState, bindings: &KeyBindings) -> InputR
         return handle_contacts_input(key, bindings);
     }
 
+    // Check if we're in help mode
+    if is_help_mode(state) {
+        return handle_help_input(key, bindings);
+    }
+
     // Check if we're in folder picker mode
     if is_picker_mode(state) {
         return handle_folder_picker(key, bindings);
@@ -91,6 +96,29 @@ fn handle_folder_picker(key: KeyEvent, bindings: &KeyBindings) -> InputResult {
     match key.code {
         KeyCode::Esc | KeyCode::Char('`') => InputResult::Action(Action::Back),
         KeyCode::Enter => InputResult::Action(Action::Open),
+        _ => InputResult::Continue,
+    }
+}
+
+fn is_help_mode(state: &AppState) -> bool {
+    state.modal.is_help()
+}
+
+fn handle_help_input(key: KeyEvent, bindings: &KeyBindings) -> InputResult {
+    // In help modal: j/k scroll, Esc or "." closes
+    if let Some(action) = bindings.get(&key) {
+        match action {
+            Action::Help => return InputResult::Action(Action::Help),
+            Action::Up => return InputResult::Action(Action::Up),
+            Action::Down => return InputResult::Action(Action::Down),
+            _ => {}
+        }
+    }
+
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('.') => InputResult::Action(Action::Help),
+        KeyCode::Up | KeyCode::Char('k') => InputResult::Action(Action::Up),
+        KeyCode::Down | KeyCode::Char('j') => InputResult::Action(Action::Down),
         _ => InputResult::Continue,
     }
 }

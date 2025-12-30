@@ -6,15 +6,11 @@ pub enum PendingCommand {
     Clear,
 }
 
-use crate::input::KeybindingEntry;
-
 /// Result of command execution
 #[derive(Debug, Clone)]
 pub enum CommandResult {
     Success(String),
     Error(String),
-    ShowHelp(Vec<CommandHelp>),
-    ShowKeys(Vec<KeybindingEntry>),
 }
 
 /// Help information for a command
@@ -62,11 +58,7 @@ pub fn available_commands() -> Vec<CommandHelp> {
         },
         CommandHelp {
             name: "help",
-            description: "Show this help message",
-        },
-        CommandHelp {
-            name: "keys",
-            description: "Show all keybindings",
+            description: "Show this help screen (same as \".\" key)",
         },
         CommandHelp {
             name: "quit",

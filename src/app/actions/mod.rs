@@ -35,12 +35,20 @@ impl App {
         match action {
             // Navigation
             Action::Up => {
-                self.move_up();
-                self.schedule_prefetch().await;
+                if self.state.modal.is_help() {
+                    self.help_scroll_up();
+                } else {
+                    self.move_up();
+                    self.schedule_prefetch().await;
+                }
             }
             Action::Down => {
-                self.move_down();
-                self.schedule_prefetch().await;
+                if self.state.modal.is_help() {
+                    self.help_scroll_down();
+                } else {
+                    self.move_down();
+                    self.schedule_prefetch().await;
+                }
             }
             Action::Left => self.move_left().await,
             Action::Right => self.move_right(),
@@ -174,7 +182,38 @@ impl App {
             Action::Polish => self.start_polish().await,
             Action::AcceptPolish => self.accept_polish(),
             Action::RejectPolish => self.reject_polish(),
+
+            // Help
+            Action::Help => {
+                self.toggle_help();
+            }
         }
         Ok(())
+    }
+
+    fn toggle_help(&mut self) {
+        use crate::command::available_commands;
+
+        if self.state.modal.is_help() {
+            self.state.modal = ModalState::None;
+        } else if !self.state.modal.is_active() {
+            self.state.modal = ModalState::Help {
+                keybindings: self.bindings.all_bindings(),
+                commands: available_commands(),
+                scroll: 0,
+            };
+        }
+    }
+
+    pub(crate) fn help_scroll_down(&mut self) {
+        if let ModalState::Help { scroll, .. } = &mut self.state.modal {
+            *scroll = scroll.saturating_add(1);
+        }
+    }
+
+    pub(crate) fn help_scroll_up(&mut self) {
+        if let ModalState::Help { scroll, .. } = &mut self.state.modal {
+            *scroll = scroll.saturating_sub(1);
+        }
     }
 }

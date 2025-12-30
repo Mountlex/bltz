@@ -91,6 +91,7 @@ User Input → Input Handler → Action Processing → IMAP Actor Commands
 | B | Contacts |
 | / | Search |
 | : | Command mode |
+| . | Help (keybindings + commands) |
 | u | Undo |
 
 ### AI Features (Vim mode)

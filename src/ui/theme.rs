@@ -49,6 +49,9 @@ pub mod symbols {
     // Star indicator
     pub const STARRED: &str = "★";
 
+    // Replied indicator
+    pub const REPLIED: &str = "↩";
+
     // Status indicators
     pub const CONNECTED: &str = "●";
     pub const DISCONNECTED: &str = "○";
@@ -163,6 +166,18 @@ impl Theme {
         Style::default()
             .bg(colors::BG_SELECTION)
             .fg(colors::FG_WARNING)
+    }
+
+    /// Replied indicator (muted)
+    pub fn replied_indicator() -> Style {
+        Style::default().fg(colors::FG_MUTED)
+    }
+
+    /// Replied indicator that preserves selection background
+    pub fn replied_indicator_selected() -> Style {
+        Style::default()
+            .bg(colors::BG_SELECTION)
+            .fg(colors::FG_MUTED)
     }
 
     pub fn thread_badge() -> Style {

@@ -33,18 +33,14 @@ impl App {
                     ));
                 }
             }
-            Some(ParsedCommand::Help) => {
-                if let ModalState::Command { input, result, .. } = &mut self.state.modal {
-                    *result = Some(CommandResult::ShowHelp(available_commands()));
-                    input.clear();
-                }
-            }
-            Some(ParsedCommand::Keys) => {
-                let keybindings = self.bindings.all_bindings();
-                if let ModalState::Command { input, result, .. } = &mut self.state.modal {
-                    *result = Some(CommandResult::ShowKeys(keybindings));
-                    input.clear();
-                }
+            Some(ParsedCommand::Help) | Some(ParsedCommand::Keys) => {
+                // Exit command mode and show the unified help view
+                self.exit_command_mode();
+                self.state.modal = ModalState::Help {
+                    keybindings: self.bindings.all_bindings(),
+                    commands: available_commands(),
+                    scroll: 0,
+                };
             }
             Some(ParsedCommand::Quit) => {
                 // Will be handled by the event loop checking for quit

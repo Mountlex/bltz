@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use aho_corasick::AhoCorasick;
 use ratatui::Frame;
 
-use crate::command::{CommandResult, PendingCommand};
+use crate::command::{CommandHelp, CommandResult, PendingCommand};
+use crate::input::KeybindingEntry;
 use crate::constants::ERROR_TTL_SECS;
 use crate::contacts::Contact;
 use crate::mail::types::{ComposeEmail, EmailBody, EmailHeader};
@@ -136,6 +137,11 @@ pub enum ModalState {
         pending: Option<PendingCommand>,
     },
     FolderPicker,
+    Help {
+        keybindings: Vec<KeybindingEntry>,
+        commands: Vec<CommandHelp>,
+        scroll: usize,
+    },
 }
 
 impl ModalState {
@@ -149,6 +155,10 @@ impl ModalState {
 
     pub fn is_folder_picker(&self) -> bool {
         matches!(self, Self::FolderPicker)
+    }
+
+    pub fn is_help(&self) -> bool {
+        matches!(self, Self::Help { .. })
     }
 
     pub fn is_active(&self) -> bool {
