@@ -1,0 +1,94 @@
+# Bltz Multi-Account Configuration Example
+#
+# Copy this file to ~/.config/bltz/config.toml and customize it.
+# Passwords are stored securely in your system keyring (not in this file).
+# Run `bltz setup` to configure accounts interactively.
+
+# Which account to show by default (0 = first account)
+default_account = 0
+
+# =============================================================================
+# Account 1: Personal Gmail
+# =============================================================================
+[[accounts]]
+email = "yourname@gmail.com"
+display_name = "Personal"
+
+[accounts.imap]
+server = "imap.gmail.com"
+port = 993
+tls = true
+
+[accounts.smtp]
+server = "smtp.gmail.com"
+port = 587
+tls = true
+
+# =============================================================================
+# Account 2: Work Email
+# =============================================================================
+[[accounts]]
+email = "yourname@company.com"
+display_name = "Work"
+# Disable notifications for work account (optional)
+notifications = false
+
+[accounts.imap]
+server = "imap.company.com"
+port = 993
+tls = true
+
+[accounts.smtp]
+server = "smtp.company.com"
+port = 587
+tls = true
+
+# =============================================================================
+# Account 3: Another Provider (e.g., Fastmail)
+# =============================================================================
+# [[accounts]]
+# email = "yourname@fastmail.com"
+# display_name = "Fastmail"
+#
+# [accounts.imap]
+# server = "imap.fastmail.com"
+# port = 993
+# tls = true
+#
+# [accounts.smtp]
+# server = "smtp.fastmail.com"
+# port = 587
+# tls = true
+
+# =============================================================================
+# Global Notification Settings
+# =============================================================================
+[notifications]
+# Enable desktop notifications for new mail
+enabled = true
+# Show email subject/sender in notification
+show_preview = true
+
+# =============================================================================
+# UI Settings
+# =============================================================================
+[ui]
+# Keybinding mode: "vim" or "arrows"
+keybinding_mode = "vim"
+# Date format in email list (strftime format)
+date_format = "%b %d"
+# Preview text length in email list
+preview_length = 100
+# Split pane ratio (30-70, 50 = equal split)
+split_ratio = 50
+
+# =============================================================================
+# Cache Settings
+# =============================================================================
+[cache]
+# Maximum number of email bodies to cache
+max_cached_bodies = 500
+# Sync interval in seconds (for periodic refresh)
+sync_interval_secs = 300
+# Number of adjacent emails to prefetch when scrolling
+prefetch_radius = 2

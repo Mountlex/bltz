@@ -1,0 +1,86 @@
+[package]
+name = "bltz"
+version = "0.1.0"
+edition = "2021"
+description = "A fast, secure terminal email client"
+license = "MIT"
+authors = ["Alexander Lindermayr"]
+repository = "https://github.com/Mountlex/bltz"
+homepage = "https://github.com/Mountlex/bltz"
+readme = "README.md"
+keywords = ["email", "terminal", "tui", "imap", "smtp"]
+categories = ["command-line-utilities", "email"]
+rust-version = "1.75"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Email protocols
+async-imap = "0.10"
+async-native-tls = "0.5"
+lettre = { version = "0.11", default-features = false, features = ["tokio1-native-tls", "smtp-transport", "builder"] }
+
+# Email parsing
+mail-parser = "0.9"
+mail-builder = "0.3"
+
+# Database (async with compile-time checked queries)
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+
+# High-performance concurrent cache
+moka = { version = "0.12", features = ["future"] }
+
+# Fast multi-pattern string matching
+aho-corasick = "1.1"
+
+# Credential storage
+keyring = "3"
+
+# OAuth2 (using reqwest directly for device code flow)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Configuration
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+dirs = "5"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+futures = "0.3"
+unicode-width = "0.2"
+bitflags = { version = "2", features = ["serde"] }
+html2text = "0.12"
+
+# Cryptography
+getrandom = "0.2"
+sha2 = "0.10"
+
+# Desktop notifications
+notify-rust = "4"
+
+# Open URLs in browser
+open = "5"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

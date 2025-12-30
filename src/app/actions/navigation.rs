@@ -1,0 +1,156 @@
+//! Navigation actions (movement, scrolling)
+
+use crate::ui::app::View;
+
+use super::super::App;
+
+impl App {
+    pub(crate) fn move_up(&mut self) {
+        // Handle folder picker navigation
+        if self.state.modal.is_folder_picker() {
+            if self.state.folder_selected > 0 {
+                self.state.folder_selected -= 1;
+            }
+            return;
+        }
+
+        match &mut self.state.view {
+            View::Inbox => {
+                self.state.move_up();
+            }
+            View::Reader { .. } => {
+                self.state.scroll_reader_up();
+            }
+            View::Contacts => {
+                self.contacts_move_up();
+            }
+            View::AddAccount { step, data } => {
+                use crate::ui::app::{AddAccountAuth, AddAccountStep};
+                if matches!(step, AddAccountStep::ChooseAuthMethod) {
+                    // Toggle auth method selection
+                    data.auth_method = match data.auth_method {
+                        AddAccountAuth::Password => AddAccountAuth::OAuth2Gmail,
+                        AddAccountAuth::OAuth2Gmail => AddAccountAuth::Password,
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) fn move_down(&mut self) {
+        // Handle folder picker navigation
+        if self.state.modal.is_folder_picker() {
+            if self.state.folder_selected < self.state.folders.len().saturating_sub(1) {
+                self.state.folder_selected += 1;
+            }
+            return;
+        }
+
+        match &mut self.state.view {
+            View::Inbox => {
+                self.state.move_down();
+            }
+            View::Reader { .. } => {
+                self.state.scroll_reader_down();
+            }
+            View::Contacts => {
+                self.contacts_move_down();
+            }
+            View::AddAccount { step, data } => {
+                use crate::ui::app::{AddAccountAuth, AddAccountStep};
+                if matches!(step, AddAccountStep::ChooseAuthMethod) {
+                    // Toggle auth method selection
+                    data.auth_method = match data.auth_method {
+                        AddAccountAuth::Password => AddAccountAuth::OAuth2Gmail,
+                        AddAccountAuth::OAuth2Gmail => AddAccountAuth::Password,
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub(super) async fn move_left(&mut self) {
+        match &self.state.view {
+            View::Inbox => {
+                self.state.collapse_or_move_left();
+            }
+            View::Reader { uid } => {
+                let uid = *uid;
+                self.state.view = View::Inbox;
+                // Try to keep body from cache for smooth transition
+                if let Ok(Some(body)) = self.cache.get_email_body(&self.cache_key(), uid).await {
+                    self.state.current_body = Some(body);
+                    self.last_prefetch_uid = Some(uid);
+                } else {
+                    self.state.current_body = None;
+                }
+            }
+            View::Composer { .. } => {
+                self.state.view = View::Inbox;
+                self.state.current_body = None;
+            }
+            View::Contacts => {
+                // Go back to inbox
+                self.state.view = View::Inbox;
+            }
+            View::AddAccount { .. } => {
+                // Handled by wizard navigation
+            }
+        }
+    }
+
+    pub(super) fn move_right(&mut self) {
+        if let View::Inbox = &self.state.view {
+            self.state.expand_thread();
+        }
+    }
+
+    pub(super) fn move_page(&mut self, delta: i32) {
+        match &self.state.view {
+            View::Inbox => {
+                for _ in 0..delta.abs() {
+                    if delta > 0 {
+                        self.state.move_down();
+                    } else {
+                        self.state.move_up();
+                    }
+                }
+            }
+            View::Reader { .. } => {
+                self.state.scroll_reader_by(delta);
+            }
+            _ => {}
+        }
+    }
+
+    pub(super) fn toggle_thread(&mut self) {
+        if matches!(self.state.view, View::Inbox) {
+            self.state.toggle_thread_expansion();
+        }
+    }
+
+    pub(super) fn move_to_top(&mut self) {
+        match &self.state.view {
+            View::Inbox => {
+                self.state.selected_thread = 0;
+                self.state.selected_in_thread = 0;
+            }
+            View::Reader { .. } => self.state.reset_reader_scroll(),
+            _ => {}
+        }
+    }
+
+    pub(super) fn move_to_bottom(&mut self) {
+        match &self.state.view {
+            View::Inbox => {
+                if !self.state.threads.is_empty() {
+                    self.state.selected_thread = self.state.threads.len() - 1;
+                    self.state.selected_in_thread = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+}
