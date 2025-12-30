@@ -37,10 +37,11 @@ impl App {
 
             // Process debounced search (body FTS) if timeout has passed
             if let Some(last_input) = self.last_search_input
-                && last_input.elapsed() >= Duration::from_millis(SEARCH_DEBOUNCE_MS) {
-                    self.execute_search().await;
-                    self.last_search_input = None;
-                }
+                && last_input.elapsed() >= Duration::from_millis(SEARCH_DEBOUNCE_MS)
+            {
+                self.execute_search().await;
+                self.last_search_input = None;
+            }
 
             // Handle input (adaptive timeout: faster when loading or pending prefetch)
             let poll_timeout = if self.state.status.loading || self.pending_prefetch.is_some() {
@@ -183,9 +184,10 @@ impl App {
                             View::Inbox => {
                                 // For inbox preview, check if this is the currently selected email
                                 if let Some(email) = self.state.current_email_from_thread()
-                                    && email.uid == uid {
-                                        self.state.reader.body = Some(body);
-                                    }
+                                    && email.uid == uid
+                                {
+                                    self.state.reader.body = Some(body);
+                                }
                             }
                             _ => {}
                         }
@@ -197,11 +199,12 @@ impl App {
                         self.in_flight_fetches.remove(&uid);
 
                         if let View::Reader { uid: viewing_uid } = self.state.view
-                            && viewing_uid == uid {
-                                self.state.status.loading = false;
-                                self.state
-                                    .set_error(format!("Failed to fetch email: {}", error));
-                            }
+                            && viewing_uid == uid
+                        {
+                            self.state.status.loading = false;
+                            self.state
+                                .set_error(format!("Failed to fetch email: {}", error));
+                        }
                     }
                 }
                 ImapEvent::FlagUpdated { uid, flags } => {

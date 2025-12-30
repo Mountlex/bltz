@@ -353,28 +353,28 @@ impl App {
                 ref mut email,
                 field,
             } = self.state.view
-            {
-                // Determine which field to update
-                let field_value = match field {
-                    ComposerField::To => &mut email.to,
-                    ComposerField::Cc => &mut email.cc,
-                    _ => {
-                        self.state.autocomplete.visible = false;
-                        self.state.autocomplete.suggestions.clear();
-                        return;
-                    }
-                };
-
-                // For multi-recipient: find the last comma and replace text after it
-                if let Some(comma_idx) = field_value.rfind(',') {
-                    // Keep everything up to and including the comma, add selected email
-                    let prefix = field_value[..=comma_idx].to_string();
-                    *field_value = format!("{} {}, ", prefix, contact.email);
-                } else {
-                    // Single recipient - just replace with selected email
-                    *field_value = format!("{}, ", contact.email);
+        {
+            // Determine which field to update
+            let field_value = match field {
+                ComposerField::To => &mut email.to,
+                ComposerField::Cc => &mut email.cc,
+                _ => {
+                    self.state.autocomplete.visible = false;
+                    self.state.autocomplete.suggestions.clear();
+                    return;
                 }
+            };
+
+            // For multi-recipient: find the last comma and replace text after it
+            if let Some(comma_idx) = field_value.rfind(',') {
+                // Keep everything up to and including the comma, add selected email
+                let prefix = field_value[..=comma_idx].to_string();
+                *field_value = format!("{} {}, ", prefix, contact.email);
+            } else {
+                // Single recipient - just replace with selected email
+                *field_value = format!("{}, ", contact.email);
             }
+        }
         self.state.autocomplete.visible = false;
         self.state.autocomplete.suggestions.clear();
     }

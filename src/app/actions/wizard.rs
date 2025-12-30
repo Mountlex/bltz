@@ -69,26 +69,28 @@ impl App {
                 // Auto-fill server if empty
                 if imap_server.is_empty()
                     && let View::AddAccount { data, .. } = &mut self.state.view
-                        && let Some(domain) = email.split('@').nth(1) {
-                            if domain.contains("gmail") {
-                                data.imap_server = "imap.gmail.com".to_string();
-                            } else {
-                                data.imap_server = format!("imap.{}", domain);
-                            }
-                        }
+                    && let Some(domain) = email.split('@').nth(1)
+                {
+                    if domain.contains("gmail") {
+                        data.imap_server = "imap.gmail.com".to_string();
+                    } else {
+                        data.imap_server = format!("imap.{}", domain);
+                    }
+                }
                 AddAccountStep::EnterSmtpServer
             }
             AddAccountStep::EnterSmtpServer => {
                 // Auto-fill server if empty
                 if smtp_server.is_empty()
                     && let View::AddAccount { data, .. } = &mut self.state.view
-                        && let Some(domain) = email.split('@').nth(1) {
-                            if domain.contains("gmail") {
-                                data.smtp_server = "smtp.gmail.com".to_string();
-                            } else {
-                                data.smtp_server = format!("smtp.{}", domain);
-                            }
-                        }
+                    && let Some(domain) = email.split('@').nth(1)
+                {
+                    if domain.contains("gmail") {
+                        data.smtp_server = "smtp.gmail.com".to_string();
+                    } else {
+                        data.smtp_server = format!("smtp.{}", domain);
+                    }
+                }
                 AddAccountStep::Confirm
             }
             AddAccountStep::Confirm => {

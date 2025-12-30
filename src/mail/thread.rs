@@ -85,17 +85,19 @@ pub fn group_into_threads(emails: &[EmailHeader]) -> Vec<EmailThread> {
         // First try in_reply_to
         if let Some(ref reply_to) = email.in_reply_to
             && let Some(&parent_idx) = by_message_id.get(reply_to)
-                && parent_idx != i {
-                    parent[i] = Some(parent_idx);
-                    continue;
-                }
+            && parent_idx != i
+        {
+            parent[i] = Some(parent_idx);
+            continue;
+        }
         // Fallback: try references (last one is most immediate parent)
         for ref_id in email.references.iter().rev() {
             if let Some(&parent_idx) = by_message_id.get(ref_id)
-                && parent_idx != i {
-                    parent[i] = Some(parent_idx);
-                    break;
-                }
+                && parent_idx != i
+            {
+                parent[i] = Some(parent_idx);
+                break;
+            }
         }
     }
 

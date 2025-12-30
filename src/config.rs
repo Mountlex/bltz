@@ -322,9 +322,10 @@ impl Config {
 
         // Try parsing as new multi-account format first
         if let Ok(config) = toml::from_str::<Config>(&content)
-            && !config.accounts.is_empty() {
-                return Ok(config);
-            }
+            && !config.accounts.is_empty()
+        {
+            return Ok(config);
+        }
 
         // Fall back to legacy single-account format
         let legacy: LegacyConfig = toml::from_str(&content)

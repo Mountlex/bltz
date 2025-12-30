@@ -417,16 +417,17 @@ impl ImapClient {
 
                     // O(1) lookup using HashMap (was O(n) linear search)
                     if let Some(&cached_flags) = cached_map.get(&uid)
-                        && server_flags != cached_flags {
-                            tracing::debug!(
-                                "Flags changed for UID {}: {:?} -> {:?}",
-                                uid,
-                                cached_flags,
-                                server_flags
-                            );
-                            cache.update_flags(account_id, uid, server_flags).await?;
-                            updated_count += 1;
-                        }
+                        && server_flags != cached_flags
+                    {
+                        tracing::debug!(
+                            "Flags changed for UID {}: {:?} -> {:?}",
+                            uid,
+                            cached_flags,
+                            server_flags
+                        );
+                        cache.update_flags(account_id, uid, server_flags).await?;
+                        updated_count += 1;
+                    }
                 }
             }
         }
@@ -518,10 +519,11 @@ impl ImapClient {
 
         while let Some(result) = messages.next().await {
             if let Ok(fetch) = result
-                && let (Some(uid), Some(body_data)) = (fetch.uid, fetch.body()) {
-                    let body = super::parser::parse_body(body_data);
-                    results.push((uid, body));
-                }
+                && let (Some(uid), Some(body_data)) = (fetch.uid, fetch.body())
+            {
+                let body = super::parser::parse_body(body_data);
+                results.push((uid, body));
+            }
         }
 
         tracing::debug!(
