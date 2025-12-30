@@ -103,6 +103,7 @@ impl AccountManager {
     }
 
     /// Get mutable reference to active account handle
+    #[allow(dead_code)]
     pub fn active_mut(&mut self) -> &mut AccountHandle {
         &mut self.handles[self.active_index]
     }
@@ -113,21 +114,25 @@ impl AccountManager {
     }
 
     /// Get mutable account handle by index
+    #[allow(dead_code)]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut AccountHandle> {
         self.handles.get_mut(index)
     }
 
     /// Get account handle by account_id (email)
+    #[allow(dead_code)]
     pub fn get_by_id(&self, account_id: &str) -> Option<&AccountHandle> {
         self.handles.iter().find(|h| h.account_id == account_id)
     }
 
     /// Get mutable account handle by account_id
+    #[allow(dead_code)]
     pub fn get_by_id_mut(&mut self, account_id: &str) -> Option<&mut AccountHandle> {
         self.handles.iter_mut().find(|h| h.account_id == account_id)
     }
 
     /// Get index of account by account_id
+    #[allow(dead_code)]
     pub fn index_of(&self, account_id: &str) -> Option<usize> {
         self.handles.iter().position(|h| h.account_id == account_id)
     }
@@ -155,6 +160,7 @@ impl AccountManager {
     }
 
     /// Switch to a specific account by index
+    #[allow(dead_code)]
     pub fn switch_to(&mut self, index: usize) -> bool {
         if index < self.handles.len() && index != self.active_index {
             self.handles[self.active_index].mark_viewed();
@@ -225,6 +231,7 @@ impl AccountManager {
     }
 
     /// Send a command to a specific account by index
+    #[allow(dead_code)]
     pub async fn send_command_to(&self, index: usize, cmd: ImapCommand) -> Result<()> {
         if let Some(handle) = self.handles.get(index) {
             let cmd_name = format!("{:?}", cmd);
@@ -255,16 +262,19 @@ impl AccountManager {
     }
 
     /// Check if any account has new mail (for notification badge)
+    #[allow(dead_code)]
     pub fn any_has_new_mail(&self) -> bool {
         self.handles.iter().any(|h| h.has_new_mail)
     }
 
     /// Get total unread count across all accounts
+    #[allow(dead_code)]
     pub fn total_unread(&self) -> usize {
         self.handles.iter().map(|h| h.unread_count).sum()
     }
 
     /// Get accounts with new mail (for status bar indicators)
+    #[allow(dead_code)]
     pub fn accounts_with_new_mail(&self) -> Vec<(usize, &AccountHandle)> {
         self.handles
             .iter()

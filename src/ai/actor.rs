@@ -8,6 +8,7 @@ use crate::mail::ThreadId;
 
 /// Commands that can be sent to the AI actor
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum AiCommand {
     /// Summarize a single email
     SummarizeEmail {

@@ -18,7 +18,7 @@ pub enum UndoableAction {
     ToggleStar { uid: u32, was_flagged: bool },
     /// Delete was performed - stores the full email header for restoration
     Delete {
-        email: EmailHeader,
+        email: Box<EmailHeader>,
         /// When the delete was initiated (for delayed execution)
         initiated_at: Instant,
         /// Index in threads where email was (for restoring selection)
@@ -36,6 +36,7 @@ pub struct UndoEntry {
 
 /// A deletion that is scheduled but not yet executed
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct PendingDeletion {
     pub uid: u32,
     pub email: EmailHeader,

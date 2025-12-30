@@ -31,7 +31,6 @@ const GMAIL_SCOPE: &str = "https://mail.google.com/";
 /// 5. Set BLTZ_OAUTH_CLIENT_ID and BLTZ_OAUTH_CLIENT_SECRET environment variables
 ///
 /// See: https://developers.google.com/identity/protocols/oauth2/native-app
-
 /// Get the OAuth2 client ID from environment variable
 pub fn get_client_id() -> Option<String> {
     std::env::var("BLTZ_OAUTH_CLIENT_ID").ok()
@@ -63,7 +62,7 @@ impl PkceChallenge {
     fn new() -> Result<Self> {
         // Generate a random 32-byte verifier using cryptographically secure RNG
         let mut verifier_bytes = [0u8; 32];
-        getrandom::getrandom(&mut verifier_bytes)
+        getrandom::fill(&mut verifier_bytes)
             .map_err(|e| anyhow::anyhow!("Failed to generate random bytes: {}", e))?;
         let verifier = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(verifier_bytes);
 
@@ -124,7 +123,7 @@ impl GmailOAuth2 {
 
         // Generate random state parameter for CSRF protection
         let mut state_bytes = [0u8; 16];
-        getrandom::getrandom(&mut state_bytes)
+        getrandom::fill(&mut state_bytes)
             .map_err(|e| anyhow::anyhow!("Failed to generate random state: {}", e))?;
         let state = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(state_bytes);
 
@@ -391,6 +390,7 @@ pub async fn get_access_token(client_id: &str, refresh_token: &str) -> Result<St
 /// Build the XOAUTH2 SASL authentication string
 ///
 /// Format: base64("user=" + email + "\x01auth=Bearer " + access_token + "\x01\x01")
+#[allow(dead_code)]
 pub fn build_xoauth2_string(email: &str, access_token: &str) -> String {
     let auth_string = format!("user={}\x01auth=Bearer {}\x01\x01", email, access_token);
     base64::engine::general_purpose::STANDARD.encode(auth_string)

@@ -1,13 +1,9 @@
 //! Database schema - now managed by sqlx in db.rs
 //! This file is kept for backwards compatibility and tests
 
-/// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 2;
-
 #[cfg(test)]
 mod tests {
     use super::super::Cache;
-    use sqlx::Row;
 
     #[tokio::test]
     async fn test_schema_creation() {
@@ -35,8 +31,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_schema_version() {
-        // Schema version is now a constant, not stored in DB
-        assert_eq!(super::SCHEMA_VERSION, 2);
+        // Schema version 2 supports multi-account with account_id columns
+        // This test verifies the schema is at version 2 by checking for account_id column
+        let cache = Cache::open_in_memory().await.unwrap();
+        // If this query works, schema is v2+ (has account_id column)
+        sqlx::query("SELECT account_id FROM emails LIMIT 0")
+            .execute(cache.pool())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

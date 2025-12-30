@@ -98,6 +98,7 @@ pub enum ImapEvent {
         uid: u32,
         flags: EmailFlags,
     },
+    #[allow(dead_code)]
     Deleted {
         uid: u32,
     },
@@ -228,6 +229,7 @@ impl ImapClient {
             .context("Not connected to IMAP server")
     }
 
+    #[allow(dead_code)]
     pub async fn select_inbox(&mut self) -> Result<Mailbox> {
         self.select_folder("INBOX").await
     }
@@ -275,6 +277,7 @@ impl ImapClient {
         Ok(folders)
     }
 
+    #[allow(dead_code)]
     pub async fn sync_inbox(&mut self, cache: &Cache, account_id: &str) -> Result<SyncResult> {
         self.sync_folder_internal(cache, account_id, "INBOX").await
     }
@@ -1100,10 +1103,10 @@ async fn handle_command(
             }
 
             // Re-select original folder for IDLE to work on correct mailbox
-            if *current_folder != original_folder {
-                if client.select_folder(&original_folder).await.is_ok() {
-                    *current_folder = original_folder;
-                }
+            if *current_folder != original_folder
+                && client.select_folder(&original_folder).await.is_ok()
+            {
+                *current_folder = original_folder;
             }
         }
         ImapCommand::Shutdown => {

@@ -37,7 +37,7 @@ impl App {
                 thread_index,
                 ..
             } => {
-                self.undo_delete(email, thread_index).await;
+                self.undo_delete(*email, thread_index).await;
             }
         }
     }

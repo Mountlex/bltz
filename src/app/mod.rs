@@ -24,7 +24,9 @@ use crate::contacts::ContactsDb;
 use crate::credentials::CredentialStore;
 use crate::input::KeyBindings;
 use crate::mail::{folder_cache_key, group_into_threads};
-use crate::ui::app::{AppState, ConnectionState, FolderState, PaginationState, PolishState, StatusState, ThreadState};
+use crate::ui::app::{
+    AppState, ConnectionState, FolderState, PaginationState, PolishState, StatusState, ThreadState,
+};
 
 use self::undo::{PendingDeletion, UndoEntry};
 
@@ -290,8 +292,10 @@ impl App {
         self.refresh_other_accounts_info();
 
         // Update status
-        self.state
-            .set_status(format!("Switched to {}", self.state.connection.account_name));
+        self.state.set_status(format!(
+            "Switched to {}",
+            self.state.connection.account_name
+        ));
 
         // Go back to inbox view
         self.state.view = View::Inbox;

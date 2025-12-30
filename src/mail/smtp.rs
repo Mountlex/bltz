@@ -15,6 +15,7 @@ pub struct SmtpClient {
 }
 
 impl SmtpClient {
+    #[allow(dead_code)]
     pub async fn new(
         config: &SmtpConfig,
         username: &str,

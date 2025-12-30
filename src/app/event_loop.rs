@@ -389,8 +389,13 @@ impl App {
         }
 
         // Clean up expanded threads that no longer exist
-        let thread_ids: std::collections::HashSet<_> =
-            self.state.thread.threads.iter().map(|t| t.id.clone()).collect();
+        let thread_ids: std::collections::HashSet<_> = self
+            .state
+            .thread
+            .threads
+            .iter()
+            .map(|t| t.id.clone())
+            .collect();
         self.state
             .thread
             .expanded

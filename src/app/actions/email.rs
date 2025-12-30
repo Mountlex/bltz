@@ -162,7 +162,13 @@ impl App {
     }
 
     pub(super) async fn select_folder(&mut self) {
-        if let Some(folder) = self.state.folder.list.get(self.state.folder.selected).cloned() {
+        if let Some(folder) = self
+            .state
+            .folder
+            .list
+            .get(self.state.folder.selected)
+            .cloned()
+        {
             if folder != self.state.folder.current {
                 self.state.status.loading = true;
                 self.state.set_status(format!("Switching to {}...", folder));
@@ -226,7 +232,7 @@ impl App {
                 // Push to undo stack
                 self.undo_stack.push(UndoEntry {
                     action: UndoableAction::Delete {
-                        email,
+                        email: Box::new(email),
                         initiated_at: now,
                         thread_index,
                     },
@@ -251,8 +257,13 @@ impl App {
                 }
 
                 // Clean up expanded threads that no longer exist
-                let thread_ids: std::collections::HashSet<_> =
-                    self.state.thread.threads.iter().map(|t| t.id.clone()).collect();
+                let thread_ids: std::collections::HashSet<_> = self
+                    .state
+                    .thread
+                    .threads
+                    .iter()
+                    .map(|t| t.id.clone())
+                    .collect();
                 self.state
                     .thread
                     .expanded

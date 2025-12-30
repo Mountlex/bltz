@@ -4,9 +4,9 @@ use aho_corasick::AhoCorasick;
 use ratatui::Frame;
 
 use crate::command::{CommandHelp, CommandResult, PendingCommand};
-use crate::input::KeybindingEntry;
 use crate::constants::ERROR_TTL_SECS;
 use crate::contacts::Contact;
+use crate::input::KeybindingEntry;
 use crate::mail::types::{ComposeEmail, EmailBody, EmailHeader};
 use crate::mail::{EmailThread, ThreadId};
 
@@ -53,6 +53,7 @@ pub enum View {
 
 /// Steps in the add account wizard
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum AddAccountStep {
     #[default]
     ChooseAuthMethod,
@@ -66,6 +67,7 @@ pub enum AddAccountStep {
 
 /// Data collected during add account wizard
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct AddAccountData {
     pub auth_method: AddAccountAuth,
     pub email: String,
@@ -174,6 +176,7 @@ impl ModalState {
     }
 
     /// Get mutable command input if in command mode
+    #[allow(dead_code)]
     pub fn command_input_mut(&mut self) -> Option<&mut String> {
         match self {
             Self::Command { input, .. } => Some(input),
@@ -604,7 +607,8 @@ impl AppState {
                 Err(_) => return self.thread.threads.iter().collect(), // Fallback: show all threads on invalid pattern
             };
 
-            self.thread.threads
+            self.thread
+                .threads
                 .iter()
                 .filter(|thread| {
                     thread.emails(&self.emails).any(|email| {

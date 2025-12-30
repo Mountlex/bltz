@@ -112,8 +112,8 @@ impl App {
             .collect();
 
         // Send single batch fetch command (more efficient than N individual requests)
-        if !uids_to_fetch.is_empty() {
-            if self
+        if !uids_to_fetch.is_empty()
+            && self
                 .accounts
                 .active()
                 .imap_handle
@@ -122,11 +122,10 @@ impl App {
                     uids: uids_to_fetch.clone(),
                 })
                 .is_ok()
-            {
-                // Track all UIDs as in-flight
-                for uid in uids_to_fetch {
-                    self.in_flight_fetches.insert(uid);
-                }
+        {
+            // Track all UIDs as in-flight
+            for uid in uids_to_fetch {
+                self.in_flight_fetches.insert(uid);
             }
         }
 

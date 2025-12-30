@@ -91,7 +91,9 @@ pub fn render_composer(
 
     // From field (multi-account only)
     if let Some(from_area) = layout.from_area {
-        let from_account_index = email.from_account_index.unwrap_or(state.connection.account_index);
+        let from_account_index = email
+            .from_account_index
+            .unwrap_or(state.connection.account_index);
         let from_account_name = state
             .connection
             .account_names

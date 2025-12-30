@@ -1016,11 +1016,10 @@ fn render_unified_help_popup(
                     Theme::text_secondary().add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    "─".repeat(
-                        inner
-                            .width
-                            .saturating_sub(entry.category.len() as u16 + 4) as usize,
-                    ),
+                    "─"
+                        .repeat(
+                            inner.width.saturating_sub(entry.category.len() as u16 + 4) as usize
+                        ),
                     Theme::border(),
                 ),
             ]);

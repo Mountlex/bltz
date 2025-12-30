@@ -316,6 +316,7 @@ impl CredentialStore {
     }
 
     /// Check if OAuth2 credentials are available
+    #[allow(dead_code)]
     pub fn has_oauth2_credentials(&self) -> bool {
         let key = format!("oauth2:{}", self.email);
         if self.keyring_get(&key).is_some() {

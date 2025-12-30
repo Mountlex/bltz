@@ -222,11 +222,8 @@ impl App {
                 // Set ANSWERED flag on original email if this was a reply
                 if let Some(reply_to_uid) = email.reply_to_uid {
                     // Update local state immediately (optimistic update)
-                    if let Some(original) = self
-                        .state
-                        .emails
-                        .iter_mut()
-                        .find(|e| e.uid == reply_to_uid)
+                    if let Some(original) =
+                        self.state.emails.iter_mut().find(|e| e.uid == reply_to_uid)
                     {
                         original.flags.insert(EmailFlags::ANSWERED);
                     }
@@ -274,7 +271,9 @@ impl App {
                 return; // Only one account, nothing to cycle
             }
 
-            let current_index = email.from_account_index.unwrap_or(self.state.connection.account_index);
+            let current_index = email
+                .from_account_index
+                .unwrap_or(self.state.connection.account_index);
             let next_index = (current_index + 1) % account_count;
             email.from_account_index = Some(next_index);
         }

@@ -4,6 +4,7 @@ use crate::config::AccountConfig;
 use crate::mail::ImapActorHandle;
 
 /// Per-account state and handles
+#[allow(dead_code)]
 pub struct AccountHandle {
     /// Account configuration
     pub config: AccountConfig,
@@ -78,6 +79,7 @@ impl AccountHandle {
     }
 
     /// Update state on successful sync
+    #[allow(dead_code)]
     pub fn on_sync_complete(&mut self, unread_count: usize) {
         self.unread_count = unread_count;
         self.last_sync = Some(Instant::now());

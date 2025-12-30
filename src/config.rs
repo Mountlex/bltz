@@ -281,11 +281,13 @@ impl Config {
     }
 
     /// Get an account by index
+    #[allow(dead_code)]
     pub fn account(&self, index: usize) -> Option<&AccountConfig> {
         self.accounts.get(index)
     }
 
     /// Get account by email address
+    #[allow(dead_code)]
     pub fn account_by_email(&self, email: &str) -> Option<&AccountConfig> {
         self.accounts.iter().find(|a| a.email == email)
     }

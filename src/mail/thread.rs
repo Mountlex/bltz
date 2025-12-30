@@ -104,8 +104,8 @@ pub fn group_into_threads(emails: &[EmailHeader]) -> Vec<EmailThread> {
 
     // Find roots using union-find with path compression
     let mut root: Vec<usize> = (0..emails.len()).collect();
-    for i in 0..emails.len() {
-        root[i] = find_root_compressed(&mut parent, i);
+    for (i, r) in root.iter_mut().enumerate() {
+        *r = find_root_compressed(&mut parent, i);
     }
 
     // Group by root, with subject-based fallback for orphans

@@ -71,7 +71,7 @@ impl EmailBody {
 
 /// Convert HTML to readable plain text
 fn strip_html_tags(html: &str) -> String {
-    html2text::from_read(html.as_bytes(), 80)
+    html2text::from_read(html.as_bytes(), 80).unwrap_or_else(|_| html.to_string())
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +103,7 @@ impl ComposeEmail {
     }
 
     /// Create a new email with a specific sending account
+    #[allow(dead_code)]
     pub fn new_from_account(account_index: usize) -> Self {
         Self {
             from_account_index: Some(account_index),

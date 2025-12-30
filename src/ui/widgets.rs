@@ -29,7 +29,7 @@ pub fn help_bar(frame: &mut Frame, area: Rect, hints: &[(&str, &str)]) {
         .iter()
         .enumerate()
         .map(|(i, (key, desc))| {
-            let base = format!(" {} ", key).width() + format!("{}", desc).width();
+            let base = format!(" {} ", key).width() + desc.to_string().width();
             if i < hints.len() - 1 {
                 base + 3 // " │ " separator
             } else {

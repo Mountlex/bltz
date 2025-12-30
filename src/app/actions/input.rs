@@ -16,10 +16,7 @@ impl App {
         }
 
         // Handle command input
-        if let ModalState::Command {
-            input, pending, ..
-        } = &mut self.state.modal
-        {
+        if let ModalState::Command { input, pending, .. } = &mut self.state.modal {
             if pending.is_none() {
                 input.push(c);
             }

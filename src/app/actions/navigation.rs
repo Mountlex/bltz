@@ -143,14 +143,11 @@ impl App {
     }
 
     pub(super) fn move_to_bottom(&mut self) {
-        match &self.state.view {
-            View::Inbox => {
-                if !self.state.thread.threads.is_empty() {
-                    self.state.thread.selected = self.state.thread.threads.len() - 1;
-                    self.state.thread.selected_in_thread = 0;
-                }
+        if let View::Inbox = &self.state.view {
+            if !self.state.thread.threads.is_empty() {
+                self.state.thread.selected = self.state.thread.threads.len() - 1;
+                self.state.thread.selected_in_thread = 0;
             }
-            _ => {}
         }
     }
 }
