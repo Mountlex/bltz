@@ -133,31 +133,50 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
         format!(" {} ", symbols::DISCONNECTED)
     };
 
-    let folder_info = if let Some(query) = info.search_query {
+    // Build folder info as spans (unread count is bold)
+    let unread_style = style.add_modifier(ratatui::style::Modifier::BOLD);
+    let folder_info_spans: Vec<(String, Style)> = if let Some(query) = info.search_query {
         if !query.is_empty() {
-            format!("\"{}\" ({} results)", query, info.search_results)
+            vec![(
+                format!("\"{}\" ({} results)", query, info.search_results),
+                style,
+            )]
         } else if info.starred_view {
-            format!(
-                "{} {} [Starred] {} / {}",
-                symbols::STARRED,
-                info.folder,
-                info.unread,
-                info.total
-            )
+            vec![
+                (
+                    format!("{} {} [Starred] ", symbols::STARRED, info.folder),
+                    style,
+                ),
+                (info.unread.to_string(), unread_style),
+                (format!(" / {}", info.total), style),
+            ]
         } else {
-            format!("{} {} / {}", info.folder, info.unread, info.total)
+            vec![
+                (format!("{} ", info.folder), style),
+                (info.unread.to_string(), unread_style),
+                (format!(" / {}", info.total), style),
+            ]
         }
     } else if info.starred_view {
-        format!(
-            "{} {} [Starred] {} / {}",
-            symbols::STARRED,
-            info.folder,
-            info.unread,
-            info.total
-        )
+        vec![
+            (
+                format!("{} {} [Starred] ", symbols::STARRED, info.folder),
+                style,
+            ),
+            (info.unread.to_string(), unread_style),
+            (format!(" / {}", info.total), style),
+        ]
     } else {
-        format!("{} {} / {}", info.folder, info.unread, info.total)
+        vec![
+            (format!("{} ", info.folder), style),
+            (info.unread.to_string(), unread_style),
+            (format!(" / {}", info.total), style),
+        ]
     };
+    let folder_info_width: usize = folder_info_spans
+        .iter()
+        .map(|(s, _)| display_width(s))
+        .sum();
 
     // Build right side content
     let status_msg = if let Some(msg) = info.status_message {
@@ -193,7 +212,7 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
     );
 
     // Calculate widths to determine available space for account
-    let left_width = display_width(&conn_indicator) + display_width(&folder_info);
+    let left_width = display_width(&conn_indicator) + folder_info_width;
     let fixed_right_width = display_width(&status_msg)
         + display_width(&memory_info)
         + display_width(&sync_info)
@@ -226,15 +245,18 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
         Theme::status_disconnected()
     };
 
-    let mut spans = vec![
-        Span::styled(conn_indicator, conn_style),
-        Span::styled(folder_info, style),
+    let mut spans = vec![Span::styled(conn_indicator, conn_style)];
+    // Add folder info spans (with bold unread count)
+    for (text, span_style) in folder_info_spans {
+        spans.push(Span::styled(text, span_style));
+    }
+    spans.extend([
         Span::styled(padding, style),
         Span::styled(status_msg, Theme::status_muted()),
         Span::styled(memory_info, Theme::status_muted()),
         Span::styled(sync_info, Theme::status_muted()),
         Span::styled(format!("{} ", account), style),
-    ];
+    ]);
 
     // Add account indicator spans
     for (text, indicator_style) in account_indicators {

@@ -815,7 +815,10 @@ fn render_thread_email(
         from_highlight_style,
     );
 
-    let mut line1_spans = vec![Span::styled("    ", base_style)]; // indent
+    let mut line1_spans = vec![Span::styled(
+        symbols::THREAD_CHILD,
+        with_selection_bg(Theme::border(), selected),
+    )];
     line1_spans.extend(from_spans);
     line1_spans.push(Span::styled(" ".repeat(padding), base_style));
     line1_spans.push(Span::styled(
@@ -927,7 +930,10 @@ fn render_thread_email(
     );
 
     let mut line2_spans = vec![
-        Span::styled("    ", base_style), // indent
+        Span::styled(
+            symbols::THREAD_CHILD,
+            with_selection_bg(Theme::border(), selected),
+        ),
         Span::styled(unread_indicator, unread_style),
         Span::styled(attachment_indicator, attach_style),
         Span::styled(star_indicator, star_style),

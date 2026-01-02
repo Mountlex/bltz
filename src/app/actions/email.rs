@@ -274,7 +274,7 @@ impl App {
                     self.state.view = View::Inbox;
                 }
 
-                self.state.set_status("Deleted (z to undo, 10s)");
+                self.state.set_status("Deleted (u to undo, 10s)");
                 // Do NOT send ImapCommand::Delete yet - delayed execution
             }
         }
@@ -341,11 +341,11 @@ impl App {
                 self.state.unread_count = self.state.unread_count.saturating_sub(1);
             }
 
-            // Show status feedback
+            // Show status feedback with undo hint
             self.state.set_status(if is_seen {
-                "Marking unread..."
+                "Marked unread (u to undo)"
             } else {
-                "Marking read..."
+                "Marked read (u to undo)"
             });
 
             // Send background command to IMAP server
@@ -405,11 +405,11 @@ impl App {
                 }
             }
 
-            // Show status feedback
+            // Show status feedback with undo hint
             self.state.set_status(if is_flagged {
-                "Removing star..."
+                "Unstarred (u to undo)"
             } else {
-                "Starring..."
+                "Starred (u to undo)"
             });
 
             // Send background command to IMAP server

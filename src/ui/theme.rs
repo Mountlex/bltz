@@ -52,6 +52,9 @@ pub mod symbols {
     // Replied indicator
     pub const REPLIED: &str = "↩";
 
+    // Thread child indent (visual tree line)
+    pub const THREAD_CHILD: &str = "  │ ";
+
     // Status indicators
     pub const CONNECTED: &str = "●";
     pub const DISCONNECTED: &str = "○";

@@ -205,7 +205,19 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
     // Sanitize: remove ANSI sequences and control characters
     let sanitized = sanitize_text(&body_text);
 
-    let text = Text::raw(sanitized);
+    // Build styled text with dimmed quoted lines
+    let lines: Vec<Line> = sanitized
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with('>') {
+                Line::styled(line, Theme::text_muted())
+            } else {
+                Line::raw(line)
+            }
+        })
+        .collect();
+
+    let text = Text::from(lines);
 
     let paragraph = Paragraph::new(text)
         .wrap(Wrap { trim: false })
