@@ -184,6 +184,196 @@ pub fn group_into_threads(emails: &[EmailHeader]) -> Vec<EmailThread> {
     threads
 }
 
+/// Merge new emails into existing threads efficiently.
+/// Returns true if incremental merge was possible, false if full rebuild is needed.
+///
+/// Incremental merge is possible when none of the new emails are parents of existing emails.
+/// This is the common case for pagination (loading older emails).
+pub fn merge_into_threads(
+    threads: &mut Vec<EmailThread>,
+    all_emails: &[EmailHeader],
+    new_email_start_idx: usize,
+) -> bool {
+    if new_email_start_idx >= all_emails.len() {
+        return true; // Nothing to merge
+    }
+
+    let new_emails = &all_emails[new_email_start_idx..];
+    if new_emails.is_empty() {
+        return true;
+    }
+
+    // Build index of message-ids that existing threads are looking for (as parents)
+    let mut wanted_parents: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for email in &all_emails[..new_email_start_idx] {
+        if let Some(ref reply_to) = email.in_reply_to {
+            wanted_parents.insert(reply_to);
+        }
+        for ref_id in &email.references {
+            wanted_parents.insert(ref_id);
+        }
+    }
+
+    // Check if any new email is a wanted parent
+    for email in new_emails {
+        if let Some(ref mid) = email.message_id
+            && wanted_parents.contains(mid.as_str())
+        {
+            // New email is a parent of existing email - need full rebuild
+            return false;
+        }
+    }
+
+    // Build message-id index for existing emails (for finding parents of new emails)
+    let mut existing_by_message_id: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::new();
+    for (i, email) in all_emails[..new_email_start_idx].iter().enumerate() {
+        if let Some(ref mid) = email.message_id {
+            existing_by_message_id.insert(mid, i);
+        }
+    }
+
+    // Build thread-id to thread-index map (using owned strings to avoid borrow issues)
+    let thread_by_id: std::collections::HashMap<String, usize> = threads
+        .iter()
+        .enumerate()
+        .map(|(idx, thread)| (thread.id.clone(), idx))
+        .collect();
+
+    // Process new emails - collect updates to apply later
+    struct ThreadUpdate {
+        thread_idx: usize,
+        email_idx: usize,
+    }
+    let mut thread_updates: Vec<ThreadUpdate> = Vec::new();
+    let mut subject_groups: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
+
+    for (offset, email) in new_emails.iter().enumerate() {
+        let email_idx = new_email_start_idx + offset;
+
+        // Try to find parent in existing emails
+        let parent_idx = email
+            .in_reply_to
+            .as_ref()
+            .and_then(|r| existing_by_message_id.get(r.as_str()).copied())
+            .or_else(|| {
+                email
+                    .references
+                    .iter()
+                    .rev()
+                    .find_map(|r| existing_by_message_id.get(r.as_str()).copied())
+            });
+
+        if let Some(parent_idx) = parent_idx {
+            // Find which thread the parent belongs to
+            let parent_thread_idx = threads
+                .iter()
+                .position(|t| t.email_indices.contains(&parent_idx));
+
+            if let Some(thread_idx) = parent_thread_idx {
+                thread_updates.push(ThreadUpdate {
+                    thread_idx,
+                    email_idx,
+                });
+                continue;
+            }
+        }
+
+        // No parent found - group by subject or create new thread
+        let normalized = normalize_subject(&email.subject);
+        subject_groups
+            .entry(normalized)
+            .or_default()
+            .push(email_idx);
+    }
+
+    // Apply thread updates
+    for update in thread_updates {
+        let email = &all_emails[update.email_idx];
+        let thread = &mut threads[update.thread_idx];
+        // Insert at correct position to maintain date order
+        let insert_pos = thread
+            .email_indices
+            .iter()
+            .position(|&idx| all_emails[idx].date > email.date)
+            .unwrap_or(thread.email_indices.len());
+        thread.email_indices.insert(insert_pos, update.email_idx);
+
+        // Update metadata
+        thread.total_count += 1;
+        if !email.flags.contains(EmailFlags::SEEN) {
+            thread.unread_count += 1;
+        }
+        if email.has_attachments {
+            thread.has_attachments = true;
+        }
+        if email.date > thread.latest_date {
+            thread.latest_date = email.date;
+            thread.latest_idx = update.email_idx;
+        }
+    }
+
+    // Create new threads from subject groups
+    let mut new_threads: Vec<EmailThread> = Vec::new();
+    for (subject, indices) in subject_groups {
+        // Check if there's an existing thread with this subject
+        let thread_id = format!("subj:{}", subject);
+        if let Some(&thread_idx) = thread_by_id.get(&thread_id) {
+            // Add to existing subject-based thread
+            let thread = &mut threads[thread_idx];
+            for &email_idx in &indices {
+                let email = &all_emails[email_idx];
+                let insert_pos = thread
+                    .email_indices
+                    .iter()
+                    .position(|&idx| all_emails[idx].date > email.date)
+                    .unwrap_or(thread.email_indices.len());
+                thread.email_indices.insert(insert_pos, email_idx);
+                thread.total_count += 1;
+                if !email.flags.contains(EmailFlags::SEEN) {
+                    thread.unread_count += 1;
+                }
+                if email.has_attachments {
+                    thread.has_attachments = true;
+                }
+                if email.date > thread.latest_date {
+                    thread.latest_date = email.date;
+                    thread.latest_idx = email_idx;
+                }
+            }
+        } else {
+            // Create new thread(s)
+            for &email_idx in &indices {
+                let email = &all_emails[email_idx];
+                let id = email
+                    .message_id
+                    .clone()
+                    .unwrap_or_else(|| format!("uid:{}", email.uid));
+                new_threads.push(EmailThread {
+                    id,
+                    email_indices: vec![email_idx],
+                    unread_count: if email.flags.contains(EmailFlags::SEEN) {
+                        0
+                    } else {
+                        1
+                    },
+                    total_count: 1,
+                    latest_date: email.date,
+                    has_attachments: email.has_attachments,
+                    latest_idx: email_idx,
+                });
+            }
+        }
+    }
+
+    // Append new threads and re-sort by latest date
+    threads.extend(new_threads);
+    threads.sort_by(|a, b| b.latest_date.cmp(&a.latest_date));
+
+    true
+}
+
 /// Find root with path compression for O(log n) amortized lookups
 fn find_root_compressed(parent: &mut [Option<usize>], mut i: usize) -> usize {
     // First pass: find the root

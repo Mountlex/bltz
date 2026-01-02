@@ -123,6 +123,8 @@ pub struct ImapClient {
     pub username: String,
     password: String,
     auth_method: AuthMethod,
+    /// Whether the server supports UIDPLUS extension (RFC 4315)
+    has_uidplus: bool,
 }
 
 /// Handle for controlling the IMAP actor
@@ -149,6 +151,7 @@ impl ImapClient {
             username,
             password,
             auth_method,
+            has_uidplus: false,
         }
     }
 
@@ -171,7 +174,7 @@ impl ImapClient {
         let client = async_imap::Client::new(tls_stream);
 
         // Authenticate based on configured auth method
-        let session = match &self.auth_method {
+        let mut session = match &self.auth_method {
             AuthMethod::Password => client
                 .login(&self.username, &self.password)
                 .await
@@ -188,6 +191,14 @@ impl ImapClient {
                     .map_err(|e| anyhow::anyhow!("XOAUTH2 authentication failed: {:?}", e.0))?
             }
         };
+
+        // Check for UIDPLUS capability (RFC 4315) for safer deletion
+        if let Ok(caps) = session.capabilities().await {
+            self.has_uidplus = caps.has(&async_imap::types::Capability::Atom("UIDPLUS".into()));
+            if self.has_uidplus {
+                tracing::debug!("Server supports UIDPLUS extension");
+            }
+        }
 
         self.session = Some(session);
         tracing::info!("Connected to IMAP server {}", self.config.server);
@@ -600,19 +611,39 @@ impl ImapClient {
         // Mark as deleted
         self.add_flag(uid, EmailFlags::DELETED).await?;
 
-        // Expunge
+        // Expunge - use UID EXPUNGE if available (RFC 4315) for safer operation
+        // UID EXPUNGE only removes the specified message, while regular EXPUNGE
+        // removes ALL messages with \Deleted flag
+        let has_uidplus = self.has_uidplus;
         let session = self.session()?;
-        let responses: Vec<_> = session
-            .expunge()
-            .await
-            .context("Failed to expunge")?
-            .collect()
-            .await;
 
-        // Check for errors in the stream responses
-        for response in responses {
-            if let Err(e) = response {
-                tracing::warn!("Error in expunge response: {:?}", e);
+        if has_uidplus {
+            // Use UID EXPUNGE for targeted deletion (only affects this specific UID)
+            // Format: UID EXPUNGE <sequence-set>
+            let cmd = format!("UID EXPUNGE {}", uid);
+            if let Err(e) = session.run_command_and_check_ok(&cmd).await {
+                tracing::warn!("UID EXPUNGE failed: {:?}, falling back to EXPUNGE", e);
+                // Fall through to regular EXPUNGE
+            } else {
+                tracing::debug!("Used UID EXPUNGE for uid {}", uid);
+                return Ok(());
+            }
+        }
+
+        {
+            // Fallback: regular EXPUNGE (affects all \Deleted messages)
+            let responses: Vec<_> = session
+                .expunge()
+                .await
+                .context("Failed to expunge")?
+                .collect()
+                .await;
+
+            // Check for errors in the stream responses
+            for response in responses {
+                if let Err(e) = response {
+                    tracing::warn!("Error in expunge response: {:?}", e);
+                }
             }
         }
 

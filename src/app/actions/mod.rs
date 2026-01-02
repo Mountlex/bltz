@@ -211,8 +211,29 @@ impl App {
     }
 
     pub(crate) fn help_scroll_down(&mut self) {
-        if let ModalState::Help { scroll, .. } = &mut self.state.modal {
-            *scroll = scroll.saturating_add(1);
+        if let ModalState::Help {
+            scroll,
+            keybindings,
+            commands,
+        } = &mut self.state.modal
+        {
+            // Calculate max scroll based on content height
+            // Each keybinding is 1 line, plus category headers (2 lines each)
+            // Commands section has 1 header + entries
+            let mut categories = 0;
+            let mut last_category = "";
+            for kb in keybindings.iter() {
+                if kb.category != last_category {
+                    categories += 1;
+                    last_category = kb.category;
+                }
+            }
+            let content_lines = keybindings.len() + categories * 2 + commands.len() + 2;
+            let max_scroll = content_lines.saturating_sub(10); // Approx visible area
+
+            if *scroll < max_scroll {
+                *scroll = scroll.saturating_add(1);
+            }
         }
     }
 

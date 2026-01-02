@@ -662,7 +662,7 @@ fn render_thread_header(
     };
     let badge_width = badge.len();
 
-    // Indent: 2 (indicator) + 1 (unread) + 1 (attach) + 1 (star) + 1 (space)
+    // Indent: 2 (indicator) + 1 (unread) + 1 (attach) + 1 (star) + 1 (space) + 1 (padding)
     let indent = 6;
     let subject_width = width.saturating_sub(indent + badge_width + 1);
 
@@ -845,7 +845,7 @@ fn render_thread_email(
     let replied_indicator = if is_replied { symbols::REPLIED } else { " " };
 
     let inner_indent = indent_width + 5; // indent + unread + attach + star + replied + space
-    let subject_width = width.saturating_sub(inner_indent);
+    let subject_width = width.saturating_sub(inner_indent + 1); // +1 for padding before divider
 
     let _subject_display = truncate_string(&email.subject, subject_width);
     let _subject_padding = subject_width.saturating_sub(_subject_display.len());

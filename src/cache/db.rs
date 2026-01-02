@@ -13,7 +13,7 @@ const POOL_SIZE: u32 = 4;
 
 /// Moka cache settings for hot data
 const BODY_CACHE_MAX_CAPACITY: u64 = 100; // Max cached bodies
-const BODY_CACHE_TTL_SECS: u64 = 300; // 5 minutes TTL
+const BODY_CACHE_TTL_SECS: u64 = 1800; // 30 minutes TTL (email bodies are immutable)
 
 /// Cache key for body cache: (account_id, uid)
 type BodyCacheKey = (String, u32);
@@ -414,26 +414,32 @@ impl Cache {
         Ok(rows.into_iter().map(Self::row_to_email_header).collect())
     }
 
-    /// Keyset pagination: get emails before a given date (O(1) vs O(offset))
-    pub async fn get_emails_before_date(
+    /// Keyset pagination: get emails before a given (date, uid) cursor (O(1) vs O(offset))
+    /// Uses composite cursor to handle identical timestamps deterministically
+    pub async fn get_emails_before_cursor(
         &self,
         account_id: &str,
-        before_date: Option<i64>,
+        cursor: Option<(i64, u32)>,
         limit: usize,
     ) -> Result<Vec<EmailHeader>> {
-        let rows = match before_date {
-            Some(date) => {
+        let rows = match cursor {
+            Some((date, uid)) => {
+                // Composite cursor: get emails that are either:
+                // 1. Older than the cursor date, OR
+                // 2. Same date but with a smaller UID
                 sqlx::query(
                     r#"
                     SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
                     FROM emails
-                    WHERE account_id = ? AND date < ?
-                    ORDER BY date DESC
+                    WHERE account_id = ? AND (date < ? OR (date = ? AND uid < ?))
+                    ORDER BY date DESC, uid DESC
                     LIMIT ?
                     "#,
                 )
                 .bind(account_id)
                 .bind(date)
+                .bind(date)
+                .bind(uid as i64)
                 .bind(limit as i64)
                 .fetch_all(&self.pool)
                 .await?
@@ -444,7 +450,7 @@ impl Cache {
                     SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
                     FROM emails
                     WHERE account_id = ?
-                    ORDER BY date DESC
+                    ORDER BY date DESC, uid DESC
                     LIMIT ?
                     "#,
                 )

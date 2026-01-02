@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 use crate::constants::{DELETION_DELAY_SECS, SEARCH_DEBOUNCE_MS};
 use crate::input::{InputResult, handle_input};
 use crate::mail::types::EmailFlags;
-use crate::mail::{ImapCommand, ImapEvent, folder_cache_key, group_into_threads};
+use crate::mail::{
+    ImapCommand, ImapEvent, folder_cache_key, group_into_threads, merge_into_threads,
+};
 use crate::ui::app::{ModalState, View};
 
 use super::{App, EMAIL_PAGE_SIZE};
@@ -363,13 +365,13 @@ impl App {
         // First page: no cursor (None)
         if let Ok(emails) = self
             .cache
-            .get_emails_before_date(&cache_key, None, EMAIL_PAGE_SIZE)
+            .get_emails_before_cursor(&cache_key, None, EMAIL_PAGE_SIZE)
             .await
         {
             self.state.pagination.emails_loaded = emails.len();
             self.state.pagination.all_loaded = emails.len() < EMAIL_PAGE_SIZE;
-            // Update pagination cursor to oldest email's date
-            self.state.pagination.cursor = emails.last().map(|e| e.date);
+            // Update pagination cursor to oldest email's (date, uid) for deterministic ordering
+            self.state.pagination.cursor = emails.last().map(|e| (e.date, e.uid));
             // Assign emails first, then build threads from reference (avoids clone)
             self.state.emails = emails;
             self.state.thread.threads = group_into_threads(&self.state.emails);
@@ -382,11 +384,8 @@ impl App {
         if let Ok(count) = self.cache.get_unread_count(&cache_key).await {
             self.state.unread_count = count;
         }
-        // Reset thread selection if out of bounds
-        if self.state.thread.selected >= self.state.thread.threads.len() {
-            self.state.thread.selected = self.state.thread.threads.len().saturating_sub(1);
-            self.state.thread.selected_in_thread = 0;
-        }
+        // Clamp selection to visible threads (respects search/starred filter)
+        self.state.clamp_selection_to_visible();
 
         // Clean up expanded threads that no longer exist
         let thread_ids: std::collections::HashSet<_> = self
@@ -412,7 +411,7 @@ impl App {
         // Use cursor-based pagination: get emails older than the last loaded email
         if let Ok(more_emails) = self
             .cache
-            .get_emails_before_date(&cache_key, self.state.pagination.cursor, EMAIL_PAGE_SIZE)
+            .get_emails_before_cursor(&cache_key, self.state.pagination.cursor, EMAIL_PAGE_SIZE)
             .await
         {
             if more_emails.is_empty() {
@@ -423,12 +422,23 @@ impl App {
             let loaded_count = more_emails.len();
             self.state.pagination.emails_loaded += loaded_count;
             self.state.pagination.all_loaded = loaded_count < EMAIL_PAGE_SIZE;
-            // Update cursor to new oldest email
-            self.state.pagination.cursor = more_emails.last().map(|e| e.date);
+            // Update cursor to new oldest email's (date, uid) for deterministic ordering
+            self.state.pagination.cursor = more_emails.last().map(|e| (e.date, e.uid));
 
-            // Append new emails and rebuild threads
+            // Try incremental merge first (much faster for pagination)
+            let start_idx = self.state.emails.len();
             self.state.emails.extend(more_emails);
-            self.state.thread.threads = group_into_threads(&self.state.emails);
+
+            // Attempt incremental merge - falls back to full rebuild if needed
+            if !merge_into_threads(
+                &mut self.state.thread.threads,
+                &self.state.emails,
+                start_idx,
+            ) {
+                // Incremental merge not possible - do full rebuild
+                self.state.thread.threads = group_into_threads(&self.state.emails);
+            }
+
             // Invalidate search cache since threads changed
             self.state.invalidate_search_cache();
         }

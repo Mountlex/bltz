@@ -8,4 +8,4 @@ pub use imap::{
     ImapActorHandle, ImapClient, ImapCommand, ImapEvent, folder_cache_key, spawn_imap_actor,
 };
 pub use smtp::SmtpClient;
-pub use thread::{EmailThread, ThreadId, group_into_threads};
+pub use thread::{EmailThread, ThreadId, group_into_threads, merge_into_threads};

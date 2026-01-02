@@ -275,11 +275,13 @@ impl StatusState {
 }
 
 /// Pagination state for keyset pagination
+/// Uses composite cursor (date, uid) for deterministic ordering when dates are identical
 #[derive(Debug, Clone, Default)]
 pub struct PaginationState {
     pub emails_loaded: usize,
     pub all_loaded: bool,
-    pub cursor: Option<i64>,
+    /// Composite cursor: (date, uid) for deterministic pagination
+    pub cursor: Option<(i64, u32)>,
 }
 
 /// Contacts view state
@@ -561,6 +563,21 @@ impl AppState {
         }
     }
 
+    /// Clamp selection to visible threads (call after search/filter changes)
+    /// This prevents selection from pointing to a non-visible thread
+    pub fn clamp_selection_to_visible(&mut self) {
+        let visible_count = self.visible_threads().len();
+        if visible_count == 0 {
+            self.thread.selected = 0;
+            self.thread.selected_in_thread = 0;
+            return;
+        }
+        if self.thread.selected >= visible_count {
+            self.thread.selected = visible_count.saturating_sub(1);
+            self.thread.selected_in_thread = 0;
+        }
+    }
+
     // Delegate methods to StatusState
     pub fn set_error(&mut self, error: impl ToString) {
         self.status.set_error(error);
@@ -732,6 +749,8 @@ impl AppState {
             self.search.cached_visible_indices = Some((0..self.thread.threads.len()).collect());
             self.search.cached_query = self.search.query.clone();
             self.search.cached_view_mode = self.view_mode;
+            // Clamp selection in case threads changed
+            self.clamp_selection_to_visible();
             return;
         }
 
@@ -761,6 +780,9 @@ impl AppState {
         self.search.cached_visible_indices = Some(indices);
         self.search.cached_query = self.search.query.clone();
         self.search.cached_view_mode = self.view_mode;
+
+        // Clamp selection to visible threads after filter change
+        self.clamp_selection_to_visible();
     }
 
     /// Check if we need to load more emails (user is near the bottom of the list)
