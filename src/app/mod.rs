@@ -46,6 +46,8 @@ pub struct App {
     pub(crate) in_flight_fetches: HashSet<u32>,
     /// Whether we've done initial folder prefetch (after first INBOX sync)
     pub(crate) prefetch_done: bool,
+    /// Whether folder prefetch is pending (waiting for folder list)
+    pub(crate) folder_prefetch_pending: bool,
     /// Stack of undoable actions (most recent first)
     pub(crate) undo_stack: Vec<UndoEntry>,
     /// Pending deletions waiting to be executed (delayed by 10 seconds)
@@ -105,6 +107,7 @@ impl App {
                 ..Default::default()
             },
             split_ratio: config.ui.split_ratio.clamp(30, 70),
+            conversation_mode: config.ui.conversation_mode,
             connection: ConnectionState {
                 account_name,
                 account_index: accounts.active_index(),
@@ -155,6 +158,7 @@ impl App {
             pending_prefetch: None,
             in_flight_fetches: HashSet::new(),
             prefetch_done: false,
+            folder_prefetch_pending: false,
             undo_stack: Vec::new(),
             pending_deletions: Vec::new(),
             last_search_input: None,

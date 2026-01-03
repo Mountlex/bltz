@@ -11,8 +11,8 @@ use super::app::{AppState, MatchType};
 use super::status_bar::spinner_char;
 use super::theme::{Theme, symbols, with_selection_bg};
 use super::widgets::{
-    StatusInfo, enhanced_status_bar, error_bar, format_date, format_relative_date, help_bar,
-    sanitize_text, truncate_string,
+    StatusInfo, display_width, enhanced_status_bar, error_bar, format_date, format_relative_date,
+    help_bar, sanitize_text, truncate_string,
 };
 use crate::command::{CommandHelp, CommandResult};
 use crate::constants::{
@@ -143,6 +143,7 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
         },
         other_accounts: &state.connection.other_accounts,
         starred_view: state.is_starred_view(),
+        conversation_mode: state.conversation_mode,
     };
     enhanced_status_bar(frame, status_area, &status_info);
 
@@ -576,15 +577,22 @@ fn render_thread_header(
     let width = width as usize;
 
     // Line 1: ▶ Alice Smith                                    Dec 27
-    let from = email.display_from();
+    // Show "→ [recipient]" for sent emails, otherwise show sender
+    let from = if email.is_sent() {
+        let recipient = email.to_addr.as_deref().unwrap_or("(unknown)");
+        let first_recipient = recipient.split(',').next().unwrap_or(recipient).trim();
+        format!("→ {}", first_recipient)
+    } else {
+        email.display_from().to_string()
+    };
     let date = format_relative_date(thread.latest_date);
 
     let date_width = date.len().max(10);
     let indicator_width = 2; // "▶ " or "▼ " or "  "
     let from_width = width.saturating_sub(indicator_width + date_width + 1);
 
-    let from_display = truncate_string(from, from_width);
-    let padding = from_width.saturating_sub(from_display.len());
+    let from_display = truncate_string(&from, from_width);
+    let padding = from_width.saturating_sub(display_width(&from_display));
 
     // Base style - used for padding to ensure full row highlight
     let base_style = if selected {
@@ -728,7 +736,8 @@ fn render_thread_header(
     // Recalculate subject width accounting for [body] indicator
     let actual_subject_width = subject_width.saturating_sub(body_indicator_width);
     let actual_subject_display = truncate_string(&email.subject, actual_subject_width);
-    let actual_subject_padding = actual_subject_width.saturating_sub(actual_subject_display.len());
+    let actual_subject_padding =
+        actual_subject_width.saturating_sub(display_width(&actual_subject_display));
 
     // Build subject with highlighting
     let subject_spans = highlight_matches(
@@ -771,15 +780,23 @@ fn render_thread_email(
 ) -> Vec<ListItem<'static>> {
     let width = width as usize;
 
-    let from = email.display_from();
+    // Show "→ [recipient]" for sent emails, otherwise show sender
+    let from = if email.is_sent() {
+        let recipient = email.to_addr.as_deref().unwrap_or("(unknown)");
+        // Extract first recipient name if multiple
+        let first_recipient = recipient.split(',').next().unwrap_or(recipient).trim();
+        format!("→ {}", first_recipient)
+    } else {
+        email.display_from().to_string()
+    };
     let date = format_relative_date(email.date);
 
     let indent_width = 4; // extra indent for thread children
     let date_width = date.len().max(10);
     let from_width = width.saturating_sub(indent_width + date_width + 1);
 
-    let from_display = truncate_string(from, from_width);
-    let padding = from_width.saturating_sub(from_display.len());
+    let from_display = truncate_string(&from, from_width);
+    let padding = from_width.saturating_sub(display_width(&from_display));
 
     // Base style - used for padding to ensure full row highlight
     let base_style = if selected {
@@ -919,7 +936,8 @@ fn render_thread_email(
     // Recalculate subject width accounting for [body] indicator
     let actual_subject_width = subject_width.saturating_sub(body_indicator_width);
     let actual_subject_display = truncate_string(&email.subject, actual_subject_width);
-    let actual_subject_padding = actual_subject_width.saturating_sub(actual_subject_display.len());
+    let actual_subject_padding =
+        actual_subject_width.saturating_sub(display_width(&actual_subject_display));
 
     // Build subject with highlighting
     let subject_spans = highlight_matches(

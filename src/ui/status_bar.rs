@@ -88,6 +88,8 @@ pub struct StatusInfo<'a> {
     pub other_accounts: &'a [OtherAccountInfo],
     /// Whether currently showing starred emails view
     pub starred_view: bool,
+    /// Whether conversation mode is enabled (show sent in threads)
+    pub conversation_mode: bool,
 }
 
 /// Calculate display width of a string (accounting for Unicode)
@@ -173,6 +175,13 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
             (format!(" / {}", info.total), style),
         ]
     };
+
+    // Add conversation mode indicator if enabled (only show in INBOX)
+    let mut folder_info_spans = folder_info_spans;
+    if info.conversation_mode && info.folder == "INBOX" {
+        folder_info_spans.push((" [Conv]".to_string(), style));
+    }
+
     let folder_info_width: usize = folder_info_spans
         .iter()
         .map(|(s, _)| display_width(s))

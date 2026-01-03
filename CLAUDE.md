@@ -93,6 +93,14 @@ User Input → Input Handler → Action Processing → IMAP Actor Commands
 | : | Command mode |
 | . | Help (keybindings + commands) |
 | u | Undo |
+| C | Toggle conversation view |
+
+### View Modes (Vim mode)
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| C | Toggle conversation view | Show/hide sent emails in inbox threads |
+| S | View starred | Toggle starred-only view |
 
 ### AI Features (Vim mode)
 
@@ -103,6 +111,15 @@ User Input → Input Handler → Action Processing → IMAP Actor Commands
 | Ctrl+p | Polish text | Composer |
 | Enter | Accept polish | Polish preview |
 | Esc | Reject polish | Polish preview |
+
+## UI Configuration
+
+```toml
+[ui]
+keybinding_mode = "vim"      # "vim" or "arrows"
+conversation_mode = true     # Show sent emails in inbox threads (default: true)
+split_ratio = 50             # Inbox/preview split ratio (30-70)
+```
 
 ## AI Configuration
 

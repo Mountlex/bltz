@@ -28,14 +28,49 @@ impl App {
         self.state.reader.scroll = 0;
 
         // Check local cache for current email first (instant, no debounce needed)
-        let cache_key = self.cache_key();
-        if let Ok(Some(body)) = self.cache.get_email_body(&cache_key, current_uid).await {
+        // Use email's folder to get the correct cache key (important for sent emails in conversation mode)
+        let current_email = self.state.current_email_from_thread().cloned();
+        let email_cache_key = current_email
+            .as_ref()
+            .map(|e| self.email_cache_key(e))
+            .unwrap_or_else(|| self.cache_key());
+        if let Ok(Some(body)) = self
+            .cache
+            .get_email_body(&email_cache_key, current_uid)
+            .await
+        {
             self.state.reader.body = Some(body);
             self.last_prefetch_uid = Some(current_uid);
         } else {
             // Only clear if not in cache - avoids flash of empty content
             self.state.reader.body = None;
+
+            // If current email is from a different folder (e.g., Sent in conversation mode),
+            // fetch it directly since batch prefetch only handles current folder
+            if let Some(ref email) = current_email {
+                let email_folder = email
+                    .folder
+                    .clone()
+                    .unwrap_or_else(|| self.state.folder.current.clone());
+                if email_folder != self.state.folder.current
+                    && !self.in_flight_fetches.contains(&current_uid)
+                {
+                    // Fetch this email's body directly
+                    self.state.status.loading = true;
+                    self.in_flight_fetches.insert(current_uid);
+                    self.accounts
+                        .active()
+                        .imap_handle
+                        .cmd_tx
+                        .try_send(ImapCommand::FetchBody {
+                            uid: current_uid,
+                            folder: email_folder,
+                        })
+                        .ok();
+                }
+            }
         }
+        let cache_key = self.cache_key();
 
         // Get nearby UIDs for prefetching
         let radius = self.config.cache.prefetch_radius;
@@ -83,8 +118,9 @@ impl App {
             return;
         }
 
-        // Get current selection's UID for tracking
-        let current_uid = self.state.current_email_from_thread().map(|e| e.uid);
+        // Get current selection for tracking
+        let current_email = self.state.current_email_from_thread().cloned();
+        let current_uid = current_email.as_ref().map(|e| e.uid);
 
         let cache_key = self.cache_key();
 
@@ -95,20 +131,33 @@ impl App {
             .await
             .unwrap_or_default();
 
-        // If current email is now cached, load it
-        if let Some(cur_uid) = current_uid
-            && cached_uids.contains(&cur_uid)
+        // If current email is now cached, load it (use email's folder for correct cache key)
+        if let Some(ref email) = current_email
             && self.state.reader.body.is_none()
-            && let Ok(Some(body)) = self.cache.get_email_body(&cache_key, cur_uid).await
         {
-            self.state.reader.body = Some(body);
-            self.last_prefetch_uid = Some(cur_uid);
+            let email_cache_key = self.email_cache_key(email);
+            if let Ok(Some(body)) = self.cache.get_email_body(&email_cache_key, email.uid).await {
+                self.state.reader.body = Some(body);
+                self.last_prefetch_uid = Some(email.uid);
+            }
         }
 
-        // Filter to only uncached UIDs
+        // Filter to only uncached UIDs from the current folder
+        // (In conversation mode, emails from other folders like Sent are merged in,
+        // but we can only batch-fetch from one folder at a time via IMAP)
+        let current_folder = &self.state.folder.current;
         let uids_to_fetch: Vec<u32> = uids
             .into_iter()
             .filter(|uid| !cached_uids.contains(uid))
+            .filter(|uid| {
+                // Only prefetch emails from current folder
+                self.state
+                    .emails
+                    .iter()
+                    .find(|e| e.uid == *uid)
+                    .map(|e| e.folder.as_deref() == Some(current_folder) || e.folder.is_none())
+                    .unwrap_or(true)
+            })
             .collect();
 
         // Send single batch fetch command (more efficient than N individual requests)
@@ -120,6 +169,7 @@ impl App {
                 .cmd_tx
                 .try_send(ImapCommand::FetchBodies {
                     uids: uids_to_fetch.clone(),
+                    folder: current_folder.clone(),
                 })
                 .is_ok()
         {

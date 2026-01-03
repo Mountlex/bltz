@@ -112,6 +112,7 @@ impl Cache {
                 body_cached INTEGER NOT NULL DEFAULT 0,
                 in_reply_to TEXT,
                 references_list TEXT,
+                folder TEXT,
                 PRIMARY KEY (account_id, uid)
             );
 
@@ -239,6 +240,17 @@ impl Cache {
         .await
         .ok(); // Ignore error if already populated
 
+        // Migration: Add folder column if it doesn't exist (for existing databases)
+        sqlx::query("ALTER TABLE emails ADD COLUMN folder TEXT")
+            .execute(pool)
+            .await
+            .ok(); // Ignore error if column already exists
+
+        // Index on folder for cross-folder queries
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_emails_folder ON emails(folder)")
+            .execute(pool)
+            .await?;
+
         Ok(())
     }
 
@@ -322,11 +334,16 @@ impl Cache {
         } else {
             Some(header.references.join(" "))
         };
+        // Extract folder from account_id (format: "account/folder") or use header.folder
+        let folder = header
+            .folder
+            .clone()
+            .or_else(|| account_id.split('/').nth(1).map(String::from));
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO emails
-            (uid, account_id, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (uid, account_id, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list, folder)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(header.uid as i64)
@@ -344,6 +361,7 @@ impl Cache {
         .bind(header.body_cached)
         .bind(&header.in_reply_to)
         .bind(references_str)
+        .bind(&folder)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -353,17 +371,21 @@ impl Cache {
         // Use a transaction for batch insert
         let mut tx = self.pool.begin().await?;
 
+        // Extract folder from account_id (format: "account/folder")
+        let default_folder: Option<String> = account_id.split('/').nth(1).map(String::from);
+
         for header in headers {
             let references_str = if header.references.is_empty() {
                 None
             } else {
                 Some(header.references.join(" "))
             };
+            let folder = header.folder.as_ref().or(default_folder.as_ref());
             sqlx::query(
                 r#"
                 INSERT OR REPLACE INTO emails
-                (uid, account_id, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (uid, account_id, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list, folder)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(header.uid as i64)
@@ -381,6 +403,7 @@ impl Cache {
             .bind(header.body_cached)
             .bind(&header.in_reply_to)
             .bind(references_str)
+            .bind(folder)
             .execute(&mut *tx)
             .await?;
         }
@@ -398,7 +421,7 @@ impl Cache {
     ) -> Result<Vec<EmailHeader>> {
         let rows = sqlx::query(
             r#"
-            SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
+            SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list, folder
             FROM emails
             WHERE account_id = ?
             ORDER BY date DESC
@@ -429,7 +452,7 @@ impl Cache {
                 // 2. Same date but with a smaller UID
                 sqlx::query(
                     r#"
-                    SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
+                    SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list, folder
                     FROM emails
                     WHERE account_id = ? AND (date < ? OR (date = ? AND uid < ?))
                     ORDER BY date DESC, uid DESC
@@ -447,7 +470,7 @@ impl Cache {
             None => {
                 sqlx::query(
                     r#"
-                    SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
+                    SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list, folder
                     FROM emails
                     WHERE account_id = ?
                     ORDER BY date DESC, uid DESC
@@ -484,13 +507,14 @@ impl Cache {
             body_cached: row.get("body_cached"),
             in_reply_to: row.get("in_reply_to"),
             references,
+            folder: row.get("folder"),
         }
     }
 
     pub async fn get_email(&self, account_id: &str, uid: u32) -> Result<Option<EmailHeader>> {
         let row = sqlx::query(
             r#"
-            SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list
+            SELECT uid, message_id, subject, from_addr, from_name, to_addr, cc_addr, date, flags, has_attachments, preview, body_cached, in_reply_to, references_list, folder
             FROM emails
             WHERE account_id = ? AND uid = ?
             "#,
@@ -738,6 +762,7 @@ mod tests {
             body_cached: false,
             in_reply_to: None,
             references: Vec::new(),
+            folder: None,
         };
 
         cache.insert_email(TEST_ACCOUNT, &header).await.unwrap();
@@ -779,6 +804,7 @@ mod tests {
             body_cached: false,
             in_reply_to: None,
             references: Vec::new(),
+            folder: None,
         };
 
         let header2 = EmailHeader {
@@ -796,6 +822,7 @@ mod tests {
             body_cached: false,
             in_reply_to: None,
             references: Vec::new(),
+            folder: None,
         };
 
         cache

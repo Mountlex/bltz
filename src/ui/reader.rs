@@ -57,6 +57,7 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
         },
         other_accounts: &state.connection.other_accounts,
         starred_view: state.is_starred_view(),
+        conversation_mode: state.conversation_mode,
     };
     enhanced_status_bar(frame, chunks[0], &status_info);
 

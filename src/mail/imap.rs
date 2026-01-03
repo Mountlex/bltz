@@ -40,10 +40,12 @@ pub enum ImapCommand {
     Sync,
     FetchBody {
         uid: u32,
+        folder: String,
     },
     /// Batch fetch multiple bodies in a single IMAP request (more efficient)
     FetchBodies {
         uids: Vec<u32>,
+        folder: String,
     },
     SetFlag {
         uid: u32,
@@ -909,11 +911,28 @@ async fn handle_command(
         ImapCommand::Sync => {
             do_sync_folder(client, cache, account_id, current_folder, event_tx).await;
         }
-        ImapCommand::FetchBody { uid } => {
-            // Check cache first (using folder-specific key)
-            if let Ok(Some(body)) = cache.get_email_body(&cache_key, uid).await {
+        ImapCommand::FetchBody { uid, folder } => {
+            // Use the provided folder for cache key (may differ from current_folder in conversation mode)
+            let body_cache_key = folder_cache_key(account_id, &folder);
+
+            // Check cache first
+            if let Ok(Some(body)) = cache.get_email_body(&body_cache_key, uid).await {
                 event_tx
                     .send(ImapEvent::BodyFetched { uid, body })
+                    .await
+                    .ok();
+                return;
+            }
+
+            // Select the folder if it differs from current (needed for conversation mode)
+            let needs_folder_switch = folder != *current_folder;
+            if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
+                tracing::warn!("Failed to select folder '{}' for body fetch: {}", folder, e);
+                event_tx
+                    .send(ImapEvent::BodyFetchFailed {
+                        uid,
+                        error: format!("Failed to select folder: {}", e),
+                    })
                     .await
                     .ok();
                 return;
@@ -923,7 +942,7 @@ async fn handle_command(
             match client.fetch_body(uid).await {
                 Ok(body) => {
                     // Cache the body with folder-specific key
-                    if let Err(e) = cache.insert_email_body(&cache_key, uid, &body).await {
+                    if let Err(e) = cache.insert_email_body(&body_cache_key, uid, &body).await {
                         tracing::warn!("Failed to cache email body for UID {}: {}", uid, e);
                     }
                     if let Err(e) = event_tx.send(ImapEvent::BodyFetched { uid, body }).await {
@@ -940,11 +959,19 @@ async fn handle_command(
                         .ok();
                 }
             }
+
+            // Switch back to original folder for IDLE
+            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
+                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
+            }
         }
-        ImapCommand::FetchBodies { uids } => {
+        ImapCommand::FetchBodies { uids, folder } => {
+            // Use the provided folder for cache key
+            let body_cache_key = folder_cache_key(account_id, &folder);
+
             // Filter out UIDs already in cache
             let cached_uids = cache
-                .get_cached_body_uids(&cache_key, &uids)
+                .get_cached_body_uids(&body_cache_key, &uids)
                 .await
                 .unwrap_or_default();
             let uids_to_fetch: Vec<u32> = uids
@@ -954,12 +981,35 @@ async fn handle_command(
 
             // Send events for cached bodies immediately
             for uid in &cached_uids {
-                if let Ok(Some(body)) = cache.get_email_body(&cache_key, *uid).await {
+                if let Ok(Some(body)) = cache.get_email_body(&body_cache_key, *uid).await {
                     event_tx
                         .send(ImapEvent::BodyFetched { uid: *uid, body })
                         .await
                         .ok();
                 }
+            }
+
+            // Select the folder if it differs from current
+            let needs_folder_switch = folder != *current_folder;
+            if needs_folder_switch
+                && !uids_to_fetch.is_empty()
+                && let Err(e) = client.select_folder(&folder).await
+            {
+                tracing::warn!(
+                    "Failed to select folder '{}' for batch body fetch: {}",
+                    folder,
+                    e
+                );
+                for uid in uids_to_fetch {
+                    event_tx
+                        .send(ImapEvent::BodyFetchFailed {
+                            uid,
+                            error: format!("Failed to select folder: {}", e),
+                        })
+                        .await
+                        .ok();
+                }
+                return;
             }
 
             // Fetch remaining bodies from server in a single batch request
@@ -968,7 +1018,9 @@ async fn handle_command(
                     Ok(fetched) => {
                         for (uid, body) in fetched {
                             // Cache each body
-                            if let Err(e) = cache.insert_email_body(&cache_key, uid, &body).await {
+                            if let Err(e) =
+                                cache.insert_email_body(&body_cache_key, uid, &body).await
+                            {
                                 tracing::warn!("Failed to cache email body for UID {}: {}", uid, e);
                             }
                             if let Err(e) =
@@ -991,6 +1043,11 @@ async fn handle_command(
                         }
                     }
                 }
+            }
+
+            // Switch back to original folder for IDLE
+            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
+                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
             }
         }
         ImapCommand::SetFlag { uid, flag } => {

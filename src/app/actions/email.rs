@@ -36,6 +36,7 @@ impl App {
 
         if let Some(email) = email {
             let uid = email.uid;
+            let cache_key = self.email_cache_key(&email);
 
             // Mark as read
             if !email.is_seen() {
@@ -53,16 +54,21 @@ impl App {
             self.state.reader.reset_scroll();
             self.state.reader.body = None;
 
-            // Check local cache first (instant)
-            if let Ok(Some(body)) = self.cache.get_email_body(&self.cache_key(), uid).await {
+            // Check local cache first (instant) - use email's folder cache key
+            if let Ok(Some(body)) = self.cache.get_email_body(&cache_key, uid).await {
                 self.state.reader.body = Some(body);
                 return;
             }
 
             // Request body fetch (non-blocking - result comes via event)
+            // Use email's folder (important for sent emails in conversation mode)
+            let folder = email
+                .folder
+                .clone()
+                .unwrap_or_else(|| self.state.folder.current.clone());
             self.state.status.loading = true;
             self.accounts
-                .send_command(ImapCommand::FetchBody { uid })
+                .send_command(ImapCommand::FetchBody { uid, folder })
                 .await
                 .ok();
         }
@@ -102,7 +108,15 @@ impl App {
                 let uid = *uid;
                 self.state.view = View::Inbox;
                 // Try to keep body from cache for smooth transition back to inbox preview
-                if let Ok(Some(body)) = self.cache.get_email_body(&self.cache_key(), uid).await {
+                // Use email's folder to get the correct cache key
+                let cache_key = self
+                    .state
+                    .emails
+                    .iter()
+                    .find(|e| e.uid == uid)
+                    .map(|e| self.email_cache_key(e))
+                    .unwrap_or_else(|| self.cache_key());
+                if let Ok(Some(body)) = self.cache.get_email_body(&cache_key, uid).await {
                     self.state.reader.body = Some(body);
                     self.last_prefetch_uid = Some(uid);
                 } else {

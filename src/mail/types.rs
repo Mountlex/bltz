@@ -29,6 +29,8 @@ pub struct EmailHeader {
     // Threading fields
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
+    /// Folder this email belongs to (e.g., "INBOX", "Sent")
+    pub folder: Option<String>,
 }
 
 impl EmailHeader {
@@ -46,6 +48,13 @@ impl EmailHeader {
 
     pub fn display_from(&self) -> &str {
         self.from_name.as_deref().unwrap_or(&self.from_addr)
+    }
+
+    /// Check if this email is from the Sent folder
+    pub fn is_sent(&self) -> bool {
+        self.folder
+            .as_ref()
+            .is_some_and(|f| f.to_lowercase().contains("sent"))
     }
 }
 

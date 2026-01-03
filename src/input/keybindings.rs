@@ -79,6 +79,9 @@ pub enum Action {
 
     // Help
     Help, // Toggle help view
+
+    // View modes
+    ToggleConversationMode, // Toggle conversation view (show sent emails in threads)
 }
 
 pub struct KeyBindings {
@@ -188,6 +191,14 @@ impl KeyBindings {
         // Help
         map.insert(key('.'), Action::Help);
 
+        // View modes
+        // Note: Some terminals send uppercase 'C' without SHIFT modifier, so we handle both
+        map.insert(shift_key('C'), Action::ToggleConversationMode);
+        map.insert(
+            KeyEvent::new(KeyCode::Char('C'), KeyModifiers::NONE),
+            Action::ToggleConversationMode,
+        );
+
         map
     }
 
@@ -255,6 +266,9 @@ impl KeyBindings {
 
         // Help
         map.insert(key('.'), Action::Help);
+
+        // View modes
+        map.insert(key_code(KeyCode::F(9)), Action::ToggleConversationMode);
 
         map
     }
@@ -376,6 +390,7 @@ fn action_description(action: &Action) -> String {
         Action::RejectPolish => "Reject polished text".to_string(),
         Action::ToggleHeaderExpand => "Expand/collapse headers".to_string(),
         Action::Help => "Toggle help".to_string(),
+        Action::ToggleConversationMode => "Toggle conversation view".to_string(),
     }
 }
 
@@ -438,6 +453,8 @@ fn action_category(action: &Action) -> &'static str {
         | Action::RejectPolish => "AI",
 
         Action::Help => "Help",
+
+        Action::ToggleConversationMode => "Actions",
     }
 }
 

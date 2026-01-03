@@ -147,7 +147,16 @@ impl App {
                         // After first successful INBOX sync, prefetch common folders
                         if !self.prefetch_done && self.state.folder.current == "INBOX" {
                             self.prefetch_done = true;
-                            self.schedule_folder_prefetch();
+                            // Request folder list first (needed for prefetch)
+                            if self.state.folder.list.is_empty() {
+                                self.folder_prefetch_pending = true;
+                                self.accounts
+                                    .send_command(ImapCommand::ListFolders)
+                                    .await
+                                    .ok();
+                            } else {
+                                self.schedule_folder_prefetch();
+                            }
                         }
                     }
                 }
@@ -189,6 +198,7 @@ impl App {
                                     && email.uid == uid
                                 {
                                     self.state.reader.body = Some(body);
+                                    self.state.status.loading = false;
                                 }
                             }
                             _ => {}
@@ -200,9 +210,17 @@ impl App {
                         // Remove from in-flight tracking
                         self.in_flight_fetches.remove(&uid);
 
-                        if let View::Reader { uid: viewing_uid } = self.state.view
-                            && viewing_uid == uid
-                        {
+                        // Check if this is the currently viewed/selected email
+                        let is_current = match &self.state.view {
+                            View::Reader { uid: viewing_uid } => *viewing_uid == uid,
+                            View::Inbox => self
+                                .state
+                                .current_email_from_thread()
+                                .is_some_and(|e| e.uid == uid),
+                            _ => false,
+                        };
+
+                        if is_current {
                             self.state.status.loading = false;
                             self.state
                                 .set_error(format!("Failed to fetch email: {}", error));
@@ -281,6 +299,11 @@ impl App {
                                 self.state.folder.selected = idx;
                             }
                         }
+                        // Trigger folder prefetch if pending (for conversation mode)
+                        if self.folder_prefetch_pending {
+                            self.folder_prefetch_pending = false;
+                            self.schedule_folder_prefetch();
+                        }
                     }
                 }
                 ImapEvent::FolderSelected { folder } => {
@@ -298,6 +321,15 @@ impl App {
                 }
                 ImapEvent::PrefetchComplete { folder } => {
                     tracing::debug!("Prefetch complete for folder: {}", folder);
+                    // If Sent folder was prefetched and conversation mode is enabled,
+                    // reload to merge sent emails into INBOX threads
+                    if is_active
+                        && self.state.conversation_mode
+                        && self.state.folder.current == "INBOX"
+                        && folder.to_lowercase().contains("sent")
+                    {
+                        self.reload_from_cache().await;
+                    }
                 }
                 ImapEvent::Error(e) => {
                     if is_active {
@@ -359,15 +391,42 @@ impl App {
         folder_cache_key(self.account_id(), &self.state.folder.current)
     }
 
+    /// Get the cache key for a specific email (uses email's folder if set, else current folder)
+    pub(crate) fn email_cache_key(&self, email: &crate::mail::types::EmailHeader) -> String {
+        let folder = email
+            .folder
+            .as_deref()
+            .unwrap_or(&self.state.folder.current);
+        folder_cache_key(self.account_id(), folder)
+    }
+
     /// Reload state from cache (resets to first page using keyset pagination)
     pub(crate) async fn reload_from_cache(&mut self) {
         let cache_key = self.cache_key();
         // First page: no cursor (None)
-        if let Ok(emails) = self
+        if let Ok(mut emails) = self
             .cache
             .get_emails_before_cursor(&cache_key, None, EMAIL_PAGE_SIZE)
             .await
         {
+            // If conversation mode is enabled and we're in INBOX, merge sent emails
+            if self.state.conversation_mode
+                && self.state.folder.current == "INBOX"
+                && let Some(sent_folder) = self.find_sent_folder()
+            {
+                let sent_cache_key = folder_cache_key(self.account_id(), &sent_folder);
+                if let Ok(sent_emails) = self
+                    .cache
+                    .get_emails_before_cursor(&sent_cache_key, None, EMAIL_PAGE_SIZE)
+                    .await
+                {
+                    // Merge sent emails (they have folder field set so can be distinguished)
+                    emails.extend(sent_emails);
+                    // Sort by date descending for consistent ordering
+                    emails.sort_by(|a, b| b.date.cmp(&a.date));
+                }
+            }
+
             self.state.pagination.emails_loaded = emails.len();
             self.state.pagination.all_loaded = emails.len() < EMAIL_PAGE_SIZE;
             // Update pagination cursor to oldest email's (date, uid) for deterministic ordering
@@ -399,6 +458,22 @@ impl App {
             .thread
             .expanded
             .retain(|id| thread_ids.contains(id));
+    }
+
+    /// Find the Sent folder name from the available folder list
+    fn find_sent_folder(&self) -> Option<String> {
+        // Common sent folder patterns
+        const SENT_PATTERNS: &[&str] = &["sent", "sent mail", "sent items", "[gmail]/sent"];
+
+        for folder in &self.state.folder.list {
+            let lower = folder.to_lowercase();
+            for pattern in SENT_PATTERNS {
+                if lower.contains(pattern) {
+                    return Some(folder.clone());
+                }
+            }
+        }
+        None
     }
 
     /// Load more emails from cache (keyset pagination - O(1) instead of O(offset))

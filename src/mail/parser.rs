@@ -64,6 +64,7 @@ pub fn parse_envelope(uid: u32, raw: &[u8], flags: EmailFlags) -> Option<EmailHe
         body_cached: false,
         in_reply_to,
         references,
+        folder: None, // Set by caller when storing
     })
 }
 

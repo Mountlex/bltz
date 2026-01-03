@@ -192,8 +192,39 @@ impl App {
             Action::Help => {
                 self.toggle_help();
             }
+
+            // View modes
+            Action::ToggleConversationMode => {
+                self.toggle_conversation_mode().await;
+            }
         }
         Ok(())
+    }
+
+    /// Toggle conversation mode (show sent emails in inbox threads)
+    async fn toggle_conversation_mode(&mut self) {
+        if !matches!(self.state.view, View::Inbox) {
+            return;
+        }
+
+        self.state.conversation_mode = !self.state.conversation_mode;
+
+        // Clear reader/prefetch state since email list will change
+        self.state.reader.body = None;
+        self.last_prefetch_uid = None;
+        self.pending_prefetch = None;
+        self.in_flight_fetches.clear();
+
+        self.reload_from_cache().await;
+
+        // Trigger prefetch for newly selected email
+        self.schedule_prefetch().await;
+
+        if self.state.conversation_mode {
+            self.state.set_status("Conversation view enabled");
+        } else {
+            self.state.set_status("Conversation view disabled");
+        }
     }
 
     fn toggle_help(&mut self) {

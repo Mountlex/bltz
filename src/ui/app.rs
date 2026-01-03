@@ -422,6 +422,8 @@ pub struct AppState {
 
     // UI settings
     pub split_ratio: u16,
+    /// Show sent emails in inbox threads (conversation view)
+    pub conversation_mode: bool,
 
     // Modal overlay state (search, command, folder picker)
     pub modal: ModalState,

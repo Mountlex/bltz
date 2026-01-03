@@ -68,16 +68,48 @@ pub fn help_bar(frame: &mut Frame, area: Rect, hints: &[(&str, &str)]) {
     frame.render_widget(paragraph, area);
 }
 
-pub fn truncate_string(s: &str, max_len: usize) -> String {
-    let char_count = s.chars().count();
-    if char_count <= max_len {
-        s.to_string()
-    } else if max_len > 3 {
-        let truncated: String = s.chars().take(max_len - 3).collect();
-        format!("{}...", truncated)
-    } else {
-        s.chars().take(max_len).collect()
+/// Calculate display width of a string (accounting for Unicode)
+pub fn display_width(s: &str) -> usize {
+    use unicode_width::UnicodeWidthStr;
+    s.width()
+}
+
+pub fn truncate_string(s: &str, max_width: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    let current_width = s.width();
+    if current_width <= max_width {
+        return s.to_string();
     }
+
+    if max_width <= 3 {
+        // Not enough room for ellipsis, just take what fits
+        let mut width = 0;
+        let mut result = String::new();
+        for c in s.chars() {
+            let char_width = c.width().unwrap_or(1);
+            if width + char_width > max_width {
+                break;
+            }
+            width += char_width;
+            result.push(c);
+        }
+        return result;
+    }
+
+    // Truncate to max_width - 3 (for "...") accounting for display width
+    let mut width = 0;
+    let mut result = String::new();
+    for c in s.chars() {
+        let char_width = c.width().unwrap_or(1);
+        if width + char_width > max_width - 3 {
+            result.push_str("...");
+            return result;
+        }
+        width += char_width;
+        result.push(c);
+    }
+    result
 }
 
 pub fn format_date(timestamp: i64) -> String {

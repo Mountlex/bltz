@@ -119,6 +119,9 @@ pub struct UiConfig {
     /// Split pane ratio for inbox view (30-70, default 50 = equal split)
     #[serde(default = "default_split_ratio")]
     pub split_ratio: u16,
+    /// Show sent emails in inbox threads (conversation view)
+    #[serde(default = "default_true")]
+    pub conversation_mode: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -212,6 +215,7 @@ impl Default for UiConfig {
             date_format: default_date_format(),
             preview_length: default_preview_length(),
             split_ratio: default_split_ratio(),
+            conversation_mode: true,
         }
     }
 }

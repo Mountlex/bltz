@@ -449,6 +449,7 @@ mod tests {
             body_cached: false,
             in_reply_to: in_reply_to.map(|s| s.to_string()),
             references: Vec::new(),
+            folder: None,
         }
     }
 
