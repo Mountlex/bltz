@@ -2,8 +2,8 @@
 
 use std::time::{Duration, Instant};
 
+use crate::app::state::View;
 use crate::mail::ImapCommand;
-use crate::ui::app::View;
 
 use super::super::{App, PREFETCH_DEBOUNCE_MS};
 

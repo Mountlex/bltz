@@ -8,8 +8,8 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::app::OtherAccountInfo;
 use super::theme::{Theme, symbols};
+use crate::app::state::OtherAccountInfo;
 use crate::constants::SPINNER_FRAME_MS;
 
 /// Get current process memory usage (RSS) in bytes

@@ -1,6 +1,6 @@
 //! Navigation actions (movement, scrolling)
 
-use crate::ui::app::View;
+use crate::app::state::View;
 
 use super::super::App;
 
@@ -25,7 +25,7 @@ impl App {
                 self.contacts_move_up();
             }
             View::AddAccount { step, data } => {
-                use crate::ui::app::{AddAccountAuth, AddAccountStep};
+                use crate::app::state::{AddAccountAuth, AddAccountStep};
                 if matches!(step, AddAccountStep::ChooseAuthMethod) {
                     // Toggle auth method selection
                     data.auth_method = match data.auth_method {
@@ -58,7 +58,7 @@ impl App {
                 self.contacts_move_down();
             }
             View::AddAccount { step, data } => {
-                use crate::ui::app::{AddAccountAuth, AddAccountStep};
+                use crate::app::state::{AddAccountAuth, AddAccountStep};
                 if matches!(step, AddAccountStep::ChooseAuthMethod) {
                     // Toggle auth method selection
                     data.auth_method = match data.auth_method {

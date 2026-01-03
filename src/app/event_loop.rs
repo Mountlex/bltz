@@ -6,13 +6,13 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 use std::time::{Duration, Instant};
 
+use crate::app::state::{ModalState, View};
 use crate::constants::{DELETION_DELAY_SECS, SEARCH_DEBOUNCE_MS};
 use crate::input::{InputResult, handle_input};
 use crate::mail::types::EmailFlags;
 use crate::mail::{
     ImapCommand, ImapEvent, folder_cache_key, group_into_threads, merge_into_threads,
 };
-use crate::ui::app::{ModalState, View};
 
 use super::{App, EMAIL_PAGE_SIZE};
 
@@ -348,7 +348,7 @@ impl App {
     /// Process events from the AI actor (non-blocking)
     pub(crate) fn process_ai_events(&mut self) {
         use crate::ai::AiEvent;
-        use crate::ui::app::PolishPreview;
+        use crate::app::state::PolishPreview;
 
         let Some(ref mut ai) = self.ai_actor else {
             return;

@@ -24,9 +24,9 @@ mod wizard;
 
 use anyhow::Result;
 
+use crate::app::state::{ModalState, View};
 use crate::input::Action;
 use crate::mail::ImapCommand;
-use crate::ui::app::{ModalState, View};
 
 use super::App;
 

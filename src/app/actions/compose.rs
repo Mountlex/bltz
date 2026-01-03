@@ -1,10 +1,10 @@
 //! Email composition actions (reply, forward, send)
 
+use crate::app::state::{ComposerField, View};
 use crate::config::AuthMethod;
 use crate::credentials::CredentialStore;
 use crate::mail::types::{ComposeEmail, EmailFlags, EmailHeader};
 use crate::mail::{ImapCommand, SmtpClient};
-use crate::ui::app::{ComposerField, View};
 
 use super::super::App;
 

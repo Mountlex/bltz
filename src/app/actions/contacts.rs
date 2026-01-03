@@ -1,7 +1,7 @@
 //! Contact management actions
 
+use crate::app::state::{ComposerField, ContactEditState, View};
 use crate::mail::types::ComposeEmail;
-use crate::ui::app::{ComposerField, ContactEditState, View};
 
 use super::super::App;
 

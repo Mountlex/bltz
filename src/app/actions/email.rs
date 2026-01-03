@@ -2,10 +2,10 @@
 
 use std::time::Instant;
 
+use crate::app::state::{ModalState, View};
 use crate::app::undo::{PendingDeletion, UndoEntry, UndoableAction};
 use crate::mail::types::EmailFlags;
 use crate::mail::{ImapCommand, group_into_threads};
-use crate::ui::app::{ModalState, View};
 
 use super::super::App;
 

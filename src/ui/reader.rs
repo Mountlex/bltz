@@ -5,11 +5,11 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-use super::app::AppState;
 use super::theme::Theme;
 use super::widgets::{
     StatusInfo, enhanced_status_bar, error_bar, format_date, help_bar, sanitize_text, spinner_char,
 };
+use crate::app::state::AppState;
 
 pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
     // Find the email first to determine header height

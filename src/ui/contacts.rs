@@ -8,9 +8,9 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
-use super::app::AppState;
 use super::theme::{Theme, with_selection_bg};
 use super::widgets::{error_bar, help_bar, truncate_string};
+use crate::app::state::AppState;
 
 pub fn render_contacts(frame: &mut Frame, state: &AppState) {
     let chunks = Layout::default()

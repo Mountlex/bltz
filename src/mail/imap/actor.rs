@@ -1,676 +1,18 @@
+//! IMAP actor: manages connection lifecycle, IDLE, command dispatch, and sync.
+
 use anyhow::{Context, Result};
-use async_imap::types::{Fetch, Flag, Mailbox};
-use async_native_tls::TlsStream;
+use async_imap::types::Flag;
 use futures::StreamExt;
 use std::sync::Arc;
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 use crate::cache::{Cache, SyncState};
-use crate::config::{AuthMethod, ImapConfig};
 use crate::constants::{
     FLAG_SYNC_BATCH_SIZE, IDLE_TIMEOUT_SECS, MAX_RETRIES, MAX_RETRY_DELAY_SECS,
 };
+use crate::mail::types::EmailFlags;
 
-use super::parser::{parse_envelope, parse_flags_from_imap};
-use super::types::{EmailBody, EmailFlags, EmailHeader};
-
-/// XOAUTH2 authenticator for IMAP
-struct XOAuth2Authenticator {
-    user: String,
-    access_token: String,
-}
-
-impl async_imap::Authenticator for XOAuth2Authenticator {
-    type Response = String;
-
-    fn process(&mut self, _challenge: &[u8]) -> Self::Response {
-        // XOAUTH2 format: "user=" + user + "\x01auth=Bearer " + token + "\x01\x01"
-        format!(
-            "user={}\x01auth=Bearer {}\x01\x01",
-            self.user, self.access_token
-        )
-    }
-}
-
-/// Commands sent TO the IMAP actor
-#[derive(Debug)]
-pub enum ImapCommand {
-    Sync,
-    FetchBody {
-        uid: u32,
-        folder: String,
-    },
-    /// Batch fetch multiple bodies in a single IMAP request (more efficient)
-    FetchBodies {
-        uids: Vec<u32>,
-        folder: String,
-    },
-    SetFlag {
-        uid: u32,
-        flag: EmailFlags,
-    },
-    RemoveFlag {
-        uid: u32,
-        flag: EmailFlags,
-    },
-    Delete {
-        uid: u32,
-    },
-    SelectFolder {
-        folder: String,
-    },
-    ListFolders,
-    /// Prefetch a folder in background (sync without selecting it as active)
-    PrefetchFolder {
-        folder: String,
-    },
-    Shutdown,
-}
-
-/// Build a cache key that includes the folder
-/// Format: "account_id/folder" to isolate emails per-folder
-pub fn folder_cache_key(account_id: &str, folder: &str) -> String {
-    format!("{}/{}", account_id, folder)
-}
-
-/// Events sent FROM the IMAP actor
-#[derive(Debug, Clone)]
-pub enum ImapEvent {
-    Connected,
-    SyncStarted,
-    SyncComplete {
-        new_count: usize,
-        total: usize,
-        full_sync: bool,
-    },
-    NewMail {
-        count: usize,
-    },
-    BodyFetched {
-        uid: u32,
-        body: EmailBody,
-    },
-    BodyFetchFailed {
-        uid: u32,
-        error: String,
-    },
-    FlagUpdated {
-        uid: u32,
-        flags: EmailFlags,
-    },
-    #[allow(dead_code)]
-    Deleted {
-        uid: u32,
-    },
-    FolderSelected {
-        folder: String,
-    },
-    FolderList {
-        folders: Vec<String>,
-    },
-    /// Background prefetch of a folder completed
-    PrefetchComplete {
-        folder: String,
-    },
-    Error(String),
-}
-
-type ImapSession = async_imap::Session<TlsStream<Compat<TcpStream>>>;
-
-pub struct ImapClient {
-    session: Option<ImapSession>,
-    pub config: ImapConfig,
-    pub username: String,
-    password: String,
-    auth_method: AuthMethod,
-    /// Whether the server supports UIDPLUS extension (RFC 4315)
-    has_uidplus: bool,
-}
-
-/// Handle for controlling the IMAP actor
-pub struct ImapActorHandle {
-    pub cmd_tx: mpsc::Sender<ImapCommand>,
-    pub event_rx: mpsc::Receiver<ImapEvent>,
-}
-
-pub struct SyncResult {
-    pub new_emails: Vec<EmailHeader>,
-    pub full_sync: bool,
-}
-
-impl ImapClient {
-    pub fn new(
-        config: ImapConfig,
-        username: String,
-        password: String,
-        auth_method: AuthMethod,
-    ) -> Self {
-        Self {
-            session: None,
-            config,
-            username,
-            password,
-            auth_method,
-            has_uidplus: false,
-        }
-    }
-
-    pub async fn connect(&mut self) -> Result<()> {
-        let addr = format!("{}:{}", self.config.server, self.config.port);
-
-        let tcp = TcpStream::connect(&addr)
-            .await
-            .with_context(|| format!("Failed to connect to {}", addr))?;
-
-        // Wrap tokio stream with compat layer for futures-io compatibility
-        let tcp_compat = tcp.compat();
-
-        let tls = async_native_tls::TlsConnector::new();
-        let tls_stream = tls
-            .connect(&self.config.server, tcp_compat)
-            .await
-            .context("TLS handshake failed")?;
-
-        let client = async_imap::Client::new(tls_stream);
-
-        // Authenticate based on configured auth method
-        let mut session = match &self.auth_method {
-            AuthMethod::Password => client
-                .login(&self.username, &self.password)
-                .await
-                .map_err(|e| anyhow::anyhow!("Login failed: {:?}", e.0))?,
-            AuthMethod::OAuth2 { .. } => {
-                // For OAuth2, the password field contains the access token
-                let authenticator = XOAuth2Authenticator {
-                    user: self.username.clone(),
-                    access_token: self.password.clone(),
-                };
-                client
-                    .authenticate("XOAUTH2", authenticator)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("XOAUTH2 authentication failed: {:?}", e.0))?
-            }
-        };
-
-        // Check for UIDPLUS capability (RFC 4315) for safer deletion
-        if let Ok(caps) = session.capabilities().await {
-            self.has_uidplus = caps.has(&async_imap::types::Capability::Atom("UIDPLUS".into()));
-            if self.has_uidplus {
-                tracing::debug!("Server supports UIDPLUS extension");
-            }
-        }
-
-        self.session = Some(session);
-        tracing::info!("Connected to IMAP server {}", self.config.server);
-
-        Ok(())
-    }
-
-    pub async fn disconnect(&mut self) -> Result<()> {
-        if let Some(mut session) = self.session.take() {
-            session.logout().await.ok();
-        }
-        Ok(())
-    }
-
-    pub fn is_connected(&self) -> bool {
-        self.session.is_some()
-    }
-
-    /// Take the session out of the client (for IDLE)
-    pub fn take_session(&mut self) -> Option<ImapSession> {
-        self.session.take()
-    }
-
-    /// Put the session back into the client
-    pub fn restore_session(&mut self, session: ImapSession) {
-        self.session = Some(session);
-    }
-
-    async fn ensure_connected(&mut self) -> Result<()> {
-        if !self.is_connected() {
-            self.connect().await?;
-        }
-        Ok(())
-    }
-
-    fn session(&mut self) -> Result<&mut ImapSession> {
-        self.session
-            .as_mut()
-            .context("Not connected to IMAP server")
-    }
-
-    #[allow(dead_code)]
-    pub async fn select_inbox(&mut self) -> Result<Mailbox> {
-        self.select_folder("INBOX").await
-    }
-
-    pub async fn select_folder(&mut self, folder: &str) -> Result<Mailbox> {
-        self.ensure_connected().await?;
-        let mailbox = self
-            .session()?
-            .select(folder)
-            .await
-            .with_context(|| format!("Failed to select folder '{}'", folder))?;
-        Ok(mailbox)
-    }
-
-    pub async fn list_folders(&mut self) -> Result<Vec<String>> {
-        self.ensure_connected().await?;
-        let session = self.session()?;
-
-        // List all folders under the root
-        let mut folders = Vec::new();
-        let mut list_stream = session.list(Some(""), Some("*")).await?;
-
-        while let Some(result) = list_stream.next().await {
-            if let Ok(name) = result {
-                folders.push(name.name().to_string());
-            }
-        }
-
-        // Sort folders with common ones first
-        folders.sort_by(|a, b| {
-            let priority = |s: &str| -> u8 {
-                match s.to_uppercase().as_str() {
-                    "INBOX" => 0,
-                    s if s.contains("SENT") => 1,
-                    s if s.contains("DRAFT") => 2,
-                    s if s.contains("TRASH") || s.contains("DELETED") => 3,
-                    s if s.contains("SPAM") || s.contains("JUNK") => 4,
-                    s if s.contains("ARCHIVE") => 5,
-                    _ => 10,
-                }
-            };
-            priority(a).cmp(&priority(b)).then_with(|| a.cmp(b))
-        });
-
-        Ok(folders)
-    }
-
-    #[allow(dead_code)]
-    pub async fn sync_inbox(&mut self, cache: &Cache, account_id: &str) -> Result<SyncResult> {
-        self.sync_folder_internal(cache, account_id, "INBOX").await
-    }
-
-    /// Sync the specified folder (or currently selected folder)
-    pub async fn sync_current_folder(
-        &mut self,
-        cache: &Cache,
-        account_id: &str,
-        folder: &str,
-    ) -> Result<SyncResult> {
-        self.sync_folder_internal(cache, account_id, folder).await
-    }
-
-    async fn sync_folder_internal(
-        &mut self,
-        cache: &Cache,
-        account_id: &str,
-        folder: &str,
-    ) -> Result<SyncResult> {
-        let mailbox = self.select_folder(folder).await?;
-
-        let server_uid_validity = mailbox.uid_validity.unwrap_or(0);
-        let server_uid_next = mailbox.uid_next.unwrap_or(1);
-        let message_count = mailbox.exists;
-
-        // Use folder-specific cache key
-        let cache_key = folder_cache_key(account_id, folder);
-
-        tracing::debug!(
-            "Mailbox '{}' state: uid_validity={}, uid_next={}, exists={}",
-            folder,
-            server_uid_validity,
-            server_uid_next,
-            message_count
-        );
-
-        let local_state = cache.get_sync_state(&cache_key).await?;
-        tracing::debug!(
-            "Local state for '{}': uid_validity={:?}, uid_next={:?}",
-            folder,
-            local_state.uid_validity,
-            local_state.uid_next
-        );
-
-        let needs_full_sync = local_state.needs_full_sync(server_uid_validity);
-
-        let new_emails = if needs_full_sync {
-            tracing::info!(
-                "Performing full sync for folder '{}' (UID validity changed or first sync)",
-                folder
-            );
-            // Fetch first, then clear - so we don't lose data on fetch failure
-            let emails = self.fetch_all_headers().await?;
-            tracing::info!("Fetched {} emails from folder '{}'", emails.len(), folder);
-            cache.clear_emails(&cache_key).await?;
-            emails
-        } else {
-            // Sync flags for existing emails first
-            self.sync_flags(cache, &cache_key).await?;
-
-            // Then fetch any new emails
-            if let Some(start_uid) = local_state.new_messages_start(server_uid_next) {
-                tracing::info!(
-                    "Fetching new messages from UID {} in folder '{}'",
-                    start_uid,
-                    folder
-                );
-                self.fetch_headers_from(start_uid).await?
-            } else {
-                tracing::debug!(
-                    "No new messages in '{}' (server_uid_next={}, local_uid_next={:?})",
-                    folder,
-                    server_uid_next,
-                    local_state.uid_next
-                );
-                Vec::new()
-            }
-        };
-
-        // Store new emails in cache with folder-specific key
-        if !new_emails.is_empty() {
-            tracing::debug!(
-                "Inserting {} emails into cache for folder '{}'",
-                new_emails.len(),
-                folder
-            );
-            cache.insert_emails(&cache_key, &new_emails).await?;
-        }
-
-        let sync_state = SyncState {
-            uid_validity: Some(server_uid_validity),
-            uid_next: Some(server_uid_next),
-            last_sync: Some(chrono::Utc::now().timestamp()),
-        };
-
-        cache.set_sync_state(&cache_key, &sync_state).await?;
-
-        Ok(SyncResult {
-            new_emails,
-            full_sync: needs_full_sync,
-        })
-    }
-
-    /// Sync flags for all cached emails with the server
-    async fn sync_flags(&mut self, cache: &Cache, account_id: &str) -> Result<()> {
-        // Get all cached email UIDs and their current flags
-        let cached_emails = cache.get_all_uid_flags(account_id).await?;
-        if cached_emails.is_empty() {
-            return Ok(());
-        }
-
-        tracing::debug!("Syncing flags for {} cached emails", cached_emails.len());
-
-        // Fetch flags from server in batches (to avoid command line length limits)
-        let mut updated_count = 0;
-
-        for chunk in cached_emails.chunks(FLAG_SYNC_BATCH_SIZE) {
-            // Build HashMap for O(1) lookup instead of O(n) linear search
-            let cached_map: std::collections::HashMap<u32, EmailFlags> =
-                chunk.iter().cloned().collect();
-
-            let uids: Vec<String> = chunk.iter().map(|(uid, _)| uid.to_string()).collect();
-            let uid_set = uids.join(",");
-
-            let session = self.session()?;
-            let mut messages = session
-                .uid_fetch(&uid_set, "(UID FLAGS)")
-                .await
-                .context("Failed to fetch flags")?;
-
-            while let Some(result) = messages.next().await {
-                let fetch = result.context("Failed to fetch message flags")?;
-                if let Some(uid) = fetch.uid {
-                    let flag_vec: Vec<Flag> = fetch.flags().collect();
-                    let server_flags = super::parser::parse_flags_from_imap(&flag_vec);
-
-                    // O(1) lookup using HashMap (was O(n) linear search)
-                    if let Some(&cached_flags) = cached_map.get(&uid)
-                        && server_flags != cached_flags
-                    {
-                        tracing::debug!(
-                            "Flags changed for UID {}: {:?} -> {:?}",
-                            uid,
-                            cached_flags,
-                            server_flags
-                        );
-                        cache.update_flags(account_id, uid, server_flags).await?;
-                        updated_count += 1;
-                    }
-                }
-            }
-        }
-
-        if updated_count > 0 {
-            tracing::info!("Updated flags for {} emails", updated_count);
-        }
-
-        Ok(())
-    }
-
-    async fn fetch_all_headers(&mut self) -> Result<Vec<EmailHeader>> {
-        self.fetch_headers("1:*").await
-    }
-
-    async fn fetch_headers_from(&mut self, start_uid: u32) -> Result<Vec<EmailHeader>> {
-        self.fetch_headers(&format!("{}:*", start_uid)).await
-    }
-
-    async fn fetch_headers(&mut self, sequence: &str) -> Result<Vec<EmailHeader>> {
-        let session = self.session()?;
-
-        let mut messages = session
-            .uid_fetch(
-                sequence,
-                "(UID FLAGS BODY.PEEK[HEADER] BODY.PEEK[TEXT]<0.200>)",
-            )
-            .await
-            .context("Failed to fetch messages")?;
-
-        let mut headers = Vec::new();
-
-        while let Some(result) = messages.next().await {
-            let fetch = result.context("Failed to fetch message")?;
-            if let Some(header) = parse_fetch(&fetch) {
-                headers.push(header);
-            }
-        }
-
-        // Sort by date descending
-        headers.sort_by(|a, b| b.date.cmp(&a.date));
-
-        tracing::info!("Fetched {} email headers", headers.len());
-        Ok(headers)
-    }
-
-    pub async fn fetch_body(&mut self, uid: u32) -> Result<EmailBody> {
-        self.ensure_connected().await?;
-
-        let session = self.session()?;
-        let mut messages = session
-            .uid_fetch(uid.to_string(), "BODY[]")
-            .await
-            .context("Failed to fetch message body")?;
-
-        while let Some(result) = messages.next().await {
-            let fetch = result.context("Failed to fetch message")?;
-            if let Some(body) = fetch.body() {
-                return Ok(super::parser::parse_body(body));
-            }
-        }
-
-        Ok(EmailBody::default())
-    }
-
-    /// Batch fetch multiple bodies in a single IMAP request.
-    /// Returns a Vec of (uid, body) pairs for successfully fetched bodies.
-    pub async fn fetch_bodies(&mut self, uids: &[u32]) -> Result<Vec<(u32, EmailBody)>> {
-        if uids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        self.ensure_connected().await?;
-
-        // Build UID sequence set: "1,2,3,4"
-        let uid_set = uids
-            .iter()
-            .map(|u| u.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-
-        let session = self.session()?;
-        let mut messages = session
-            .uid_fetch(&uid_set, "BODY[]")
-            .await
-            .context("Failed to fetch message bodies")?;
-
-        let mut results = Vec::with_capacity(uids.len());
-
-        while let Some(result) = messages.next().await {
-            if let Ok(fetch) = result
-                && let (Some(uid), Some(body_data)) = (fetch.uid, fetch.body())
-            {
-                let body = super::parser::parse_body(body_data);
-                results.push((uid, body));
-            }
-        }
-
-        tracing::debug!(
-            "Batch fetched {} bodies (requested {})",
-            results.len(),
-            uids.len()
-        );
-        Ok(results)
-    }
-
-    pub async fn add_flag(&mut self, uid: u32, flag: EmailFlags) -> Result<()> {
-        self.ensure_connected().await?;
-
-        let flag_str = match flag {
-            EmailFlags::SEEN => "\\Seen",
-            EmailFlags::ANSWERED => "\\Answered",
-            EmailFlags::FLAGGED => "\\Flagged",
-            EmailFlags::DELETED => "\\Deleted",
-            EmailFlags::DRAFT => "\\Draft",
-            _ => return Ok(()),
-        };
-
-        let session = self.session()?;
-        let responses: Vec<_> = session
-            .uid_store(uid.to_string(), format!("+FLAGS ({})", flag_str))
-            .await
-            .context("Failed to add flag")?
-            .collect()
-            .await;
-
-        // Check for errors in the stream responses
-        for response in responses {
-            if let Err(e) = response {
-                tracing::warn!("Error in add_flag response: {:?}", e);
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn remove_flag(&mut self, uid: u32, flag: EmailFlags) -> Result<()> {
-        self.ensure_connected().await?;
-
-        let flag_str = match flag {
-            EmailFlags::SEEN => "\\Seen",
-            EmailFlags::ANSWERED => "\\Answered",
-            EmailFlags::FLAGGED => "\\Flagged",
-            EmailFlags::DELETED => "\\Deleted",
-            EmailFlags::DRAFT => "\\Draft",
-            _ => return Ok(()),
-        };
-
-        let session = self.session()?;
-        let responses: Vec<_> = session
-            .uid_store(uid.to_string(), format!("-FLAGS ({})", flag_str))
-            .await
-            .context("Failed to remove flag")?
-            .collect()
-            .await;
-
-        // Check for errors in the stream responses
-        for response in responses {
-            if let Err(e) = response {
-                tracing::warn!("Error in remove_flag response: {:?}", e);
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn delete(&mut self, uid: u32) -> Result<()> {
-        self.ensure_connected().await?;
-
-        // Mark as deleted
-        self.add_flag(uid, EmailFlags::DELETED).await?;
-
-        // Expunge - use UID EXPUNGE if available (RFC 4315) for safer operation
-        // UID EXPUNGE only removes the specified message, while regular EXPUNGE
-        // removes ALL messages with \Deleted flag
-        let has_uidplus = self.has_uidplus;
-        let session = self.session()?;
-
-        if has_uidplus {
-            // Use UID EXPUNGE for targeted deletion (only affects this specific UID)
-            // Format: UID EXPUNGE <sequence-set>
-            let cmd = format!("UID EXPUNGE {}", uid);
-            if let Err(e) = session.run_command_and_check_ok(&cmd).await {
-                tracing::warn!("UID EXPUNGE failed: {:?}, falling back to EXPUNGE", e);
-                // Fall through to regular EXPUNGE
-            } else {
-                tracing::debug!("Used UID EXPUNGE for uid {}", uid);
-                return Ok(());
-            }
-        }
-
-        {
-            // Fallback: regular EXPUNGE (affects all \Deleted messages)
-            let responses: Vec<_> = session
-                .expunge()
-                .await
-                .context("Failed to expunge")?
-                .collect()
-                .await;
-
-            // Check for errors in the stream responses
-            for response in responses {
-                if let Err(e) = response {
-                    tracing::warn!("Error in expunge response: {:?}", e);
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
-fn parse_fetch(fetch: &Fetch) -> Option<EmailHeader> {
-    let uid = fetch.uid?;
-
-    // Collect flags from iterator
-    let flag_vec: Vec<Flag> = fetch.flags().collect();
-    let flags = parse_flags_from_imap(&flag_vec);
-
-    // Combine header and partial body for parsing
-    let header_bytes = fetch.header()?;
-    let body_preview = fetch.text().unwrap_or(&[]);
-
-    let mut raw = Vec::with_capacity(header_bytes.len() + 4 + body_preview.len());
-    raw.extend_from_slice(header_bytes);
-    raw.extend_from_slice(b"\r\n\r\n");
-    raw.extend_from_slice(body_preview);
-
-    parse_envelope(uid, &raw, flags)
-}
+use super::{ImapActorHandle, ImapClient, ImapCommand, ImapEvent, SyncResult, folder_cache_key};
 
 /// Spawn the IMAP actor and return a handle to control it.
 /// The actor maintains a single connection and uses IDLE for push notifications.
@@ -1251,4 +593,172 @@ async fn reconnect(client: &mut ImapClient) -> Result<()> {
     client.disconnect().await.ok();
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     client.connect().await
+}
+
+//
+// Sync operations on ImapClient
+//
+
+impl ImapClient {
+    #[allow(dead_code)]
+    pub async fn sync_inbox(&mut self, cache: &Cache, account_id: &str) -> Result<SyncResult> {
+        self.sync_folder_internal(cache, account_id, "INBOX").await
+    }
+
+    /// Sync the specified folder (or currently selected folder)
+    pub async fn sync_current_folder(
+        &mut self,
+        cache: &Cache,
+        account_id: &str,
+        folder: &str,
+    ) -> Result<SyncResult> {
+        self.sync_folder_internal(cache, account_id, folder).await
+    }
+
+    async fn sync_folder_internal(
+        &mut self,
+        cache: &Cache,
+        account_id: &str,
+        folder: &str,
+    ) -> Result<SyncResult> {
+        let mailbox = self.select_folder(folder).await?;
+
+        let server_uid_validity = mailbox.uid_validity.unwrap_or(0);
+        let server_uid_next = mailbox.uid_next.unwrap_or(1);
+        let message_count = mailbox.exists;
+
+        // Use folder-specific cache key
+        let cache_key = folder_cache_key(account_id, folder);
+
+        tracing::debug!(
+            "Mailbox '{}' state: uid_validity={}, uid_next={}, exists={}",
+            folder,
+            server_uid_validity,
+            server_uid_next,
+            message_count
+        );
+
+        let local_state = cache.get_sync_state(&cache_key).await?;
+        tracing::debug!(
+            "Local state for '{}': uid_validity={:?}, uid_next={:?}",
+            folder,
+            local_state.uid_validity,
+            local_state.uid_next
+        );
+
+        let needs_full_sync = local_state.needs_full_sync(server_uid_validity);
+
+        let new_emails = if needs_full_sync {
+            tracing::info!(
+                "Performing full sync for folder '{}' (UID validity changed or first sync)",
+                folder
+            );
+            // Fetch first, then clear - so we don't lose data on fetch failure
+            let emails = self.fetch_all_headers().await?;
+            tracing::info!("Fetched {} emails from folder '{}'", emails.len(), folder);
+            cache.clear_emails(&cache_key).await?;
+            emails
+        } else {
+            // Sync flags for existing emails first
+            self.sync_flags(cache, &cache_key).await?;
+
+            // Then fetch any new emails
+            if let Some(start_uid) = local_state.new_messages_start(server_uid_next) {
+                tracing::info!(
+                    "Fetching new messages from UID {} in folder '{}'",
+                    start_uid,
+                    folder
+                );
+                self.fetch_headers_from(start_uid).await?
+            } else {
+                tracing::debug!(
+                    "No new messages in '{}' (server_uid_next={}, local_uid_next={:?})",
+                    folder,
+                    server_uid_next,
+                    local_state.uid_next
+                );
+                Vec::new()
+            }
+        };
+
+        // Store new emails in cache with folder-specific key
+        if !new_emails.is_empty() {
+            tracing::debug!(
+                "Inserting {} emails into cache for folder '{}'",
+                new_emails.len(),
+                folder
+            );
+            cache.insert_emails(&cache_key, &new_emails).await?;
+        }
+
+        let sync_state = SyncState {
+            uid_validity: Some(server_uid_validity),
+            uid_next: Some(server_uid_next),
+            last_sync: Some(chrono::Utc::now().timestamp()),
+        };
+
+        cache.set_sync_state(&cache_key, &sync_state).await?;
+
+        Ok(SyncResult {
+            new_emails,
+            full_sync: needs_full_sync,
+        })
+    }
+
+    /// Sync flags for all cached emails with the server
+    async fn sync_flags(&mut self, cache: &Cache, account_id: &str) -> Result<()> {
+        // Get all cached email UIDs and their current flags
+        let cached_emails = cache.get_all_uid_flags(account_id).await?;
+        if cached_emails.is_empty() {
+            return Ok(());
+        }
+
+        tracing::debug!("Syncing flags for {} cached emails", cached_emails.len());
+
+        // Fetch flags from server in batches (to avoid command line length limits)
+        let mut updated_count = 0;
+
+        for chunk in cached_emails.chunks(FLAG_SYNC_BATCH_SIZE) {
+            // Build HashMap for O(1) lookup instead of O(n) linear search
+            let cached_map: std::collections::HashMap<u32, EmailFlags> =
+                chunk.iter().cloned().collect();
+
+            let uids: Vec<String> = chunk.iter().map(|(uid, _)| uid.to_string()).collect();
+            let uid_set = uids.join(",");
+
+            let session = self.session()?;
+            let mut messages = session
+                .uid_fetch(&uid_set, "(UID FLAGS)")
+                .await
+                .context("Failed to fetch flags")?;
+
+            while let Some(result) = messages.next().await {
+                let fetch = result.context("Failed to fetch message flags")?;
+                if let Some(uid) = fetch.uid {
+                    let flag_vec: Vec<Flag> = fetch.flags().collect();
+                    let server_flags = crate::mail::parser::parse_flags_from_imap(&flag_vec);
+
+                    // O(1) lookup using HashMap (was O(n) linear search)
+                    if let Some(&cached_flags) = cached_map.get(&uid)
+                        && server_flags != cached_flags
+                    {
+                        tracing::debug!(
+                            "Flags changed for UID {}: {:?} -> {:?}",
+                            uid,
+                            cached_flags,
+                            server_flags
+                        );
+                        cache.update_flags(account_id, uid, server_flags).await?;
+                        updated_count += 1;
+                    }
+                }
+            }
+        }
+
+        if updated_count > 0 {
+            tracing::info!("Updated flags for {} emails", updated_count);
+        }
+
+        Ok(())
+    }
 }

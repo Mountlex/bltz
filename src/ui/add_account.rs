@@ -3,8 +3,8 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
-use super::app::{AddAccountAuth, AddAccountData, AddAccountStep, AppState};
 use super::theme::Theme;
+use crate::app::state::{AddAccountAuth, AddAccountData, AddAccountStep, AppState};
 
 pub fn render_add_account(
     frame: &mut Frame,

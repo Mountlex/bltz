@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
-use crate::ui::app::{ComposerField, ModalState, View};
+use crate::app::state::{ComposerField, ModalState, View};
 
 use super::super::App;
 
@@ -41,7 +41,7 @@ impl App {
 
         // Handle add account wizard input
         if let View::AddAccount { step, data } = &mut self.state.view {
-            use crate::ui::app::AddAccountStep;
+            use crate::app::state::AddAccountStep;
             match step {
                 AddAccountStep::EnterEmail => data.email.push(c),
                 AddAccountStep::EnterPassword => data.password.push(c),
@@ -106,7 +106,7 @@ impl App {
 
         // Handle add account wizard backspace
         if let View::AddAccount { step, data } = &mut self.state.view {
-            use crate::ui::app::AddAccountStep;
+            use crate::app::state::AddAccountStep;
             match step {
                 AddAccountStep::EnterEmail => {
                     data.email.pop();

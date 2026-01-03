@@ -1,10 +1,10 @@
 //! Command mode operations (execute, test, confirm, cancel)
 
+use crate::app::state::{AddAccountData, AddAccountStep, ModalState, View};
 use crate::command::{
     CommandResult, ParsedCommand, PendingCommand, available_commands, parse_command,
 };
 use crate::credentials::CredentialStore;
-use crate::ui::app::{AddAccountData, AddAccountStep, ModalState, View};
 
 use super::super::App;
 

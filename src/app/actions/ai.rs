@@ -1,7 +1,7 @@
 //! AI feature action handlers
 
 use crate::ai::AiCommand;
-use crate::ui::app::{PolishPreview, View};
+use crate::app::state::{PolishPreview, View};
 
 use super::super::App;
 

@@ -5,9 +5,9 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 
-use super::app::{AppState, ComposerField, PolishPreview};
 use super::theme::Theme;
 use super::widgets::{error_bar, help_bar, status_bar};
+use crate::app::state::{AppState, ComposerField, PolishPreview};
 use crate::mail::types::ComposeEmail;
 
 /// Composer layout areas computed based on account count

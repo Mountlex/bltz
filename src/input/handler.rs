@@ -1,7 +1,7 @@
 use crossterm::event::{Event, KeyCode, KeyEvent};
 
 use super::keybindings::{Action, KeyBindings};
-use crate::ui::app::{AppState, View};
+use crate::app::state::{AppState, View};
 
 pub enum InputResult {
     Continue,
@@ -247,7 +247,7 @@ fn handle_contacts_edit_input(key: KeyEvent) -> InputResult {
 
 fn is_autocomplete_mode(state: &AppState) -> bool {
     if let View::Composer { field, .. } = state.view {
-        use crate::ui::app::ComposerField;
+        use crate::app::state::ComposerField;
         return (field == ComposerField::To || field == ComposerField::Cc)
             && state.autocomplete.visible;
     }
@@ -280,7 +280,7 @@ fn handle_autocomplete_input(key: KeyEvent, bindings: &KeyBindings) -> InputResu
 }
 
 fn handle_add_account_input(key: KeyEvent, state: &AppState) -> InputResult {
-    use crate::ui::app::AddAccountStep;
+    use crate::app::state::AddAccountStep;
 
     // Get the current step
     let step = if let View::AddAccount { step, .. } = &state.view {

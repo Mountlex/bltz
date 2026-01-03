@@ -2,6 +2,7 @@
 
 mod actions;
 mod event_loop;
+pub mod state;
 pub mod undo;
 
 use anyhow::Result;
@@ -24,7 +25,7 @@ use crate::contacts::ContactsDb;
 use crate::credentials::CredentialStore;
 use crate::input::KeyBindings;
 use crate::mail::{folder_cache_key, group_into_threads};
-use crate::ui::app::{
+use state::{
     AppState, ConnectionState, FolderState, PaginationState, PolishState, StatusState, ThreadState,
 };
 
@@ -269,7 +270,7 @@ impl App {
 
     /// Called when the active account changes
     async fn on_account_switched(&mut self) {
-        use crate::ui::app::View;
+        use crate::app::state::View;
 
         // Update state for the new account
         let account = self.accounts.active();
@@ -319,7 +320,7 @@ impl App {
 
     /// Refresh the other_accounts info for status bar rendering
     pub(crate) fn refresh_other_accounts_info(&mut self) {
-        use crate::ui::app::OtherAccountInfo;
+        use crate::app::state::OtherAccountInfo;
 
         let active_index = self.accounts.active_index();
         self.state.connection.other_accounts.clear();
