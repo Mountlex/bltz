@@ -1,6 +1,6 @@
 use mail_parser::{MessageParser, MimeHeaders, PartType};
 
-use super::types::{EmailBody, EmailFlags, EmailHeader};
+use super::types::{Attachment, EmailBody, EmailFlags, EmailHeader};
 
 pub fn parse_envelope(uid: u32, raw: &[u8], flags: EmailFlags) -> Option<EmailHeader> {
     let message = MessageParser::default().parse(raw)?;
@@ -77,6 +77,59 @@ pub fn parse_body(raw: &[u8]) -> EmailBody {
     let html = extract_html_body(&message);
 
     EmailBody { text, html }
+}
+
+/// Parse attachment metadata from raw email
+pub fn parse_attachments(raw: &[u8]) -> Vec<Attachment> {
+    let Some(message) = MessageParser::default().parse(raw) else {
+        return Vec::new();
+    };
+
+    message
+        .attachments()
+        .enumerate()
+        .map(|(i, part)| {
+            let filename = part
+                .attachment_name()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("attachment_{}", i + 1));
+
+            let mime_type = part
+                .content_type()
+                .map(|ct| format!("{}/{}", ct.ctype(), ct.subtype().unwrap_or("octet-stream")))
+                .unwrap_or_else(|| "application/octet-stream".to_string());
+
+            let size = match &part.body {
+                PartType::Binary(data) => data.len(),
+                PartType::Text(data) => data.len(),
+                PartType::Html(data) => data.len(),
+                _ => 0,
+            };
+
+            let content_id = part.content_id().map(|s| s.to_string());
+
+            Attachment {
+                id: 0,
+                filename,
+                mime_type,
+                size,
+                content_id,
+            }
+        })
+        .collect()
+}
+
+/// Extract binary data for a specific attachment by index
+pub fn extract_attachment_data(raw: &[u8], index: usize) -> Option<Vec<u8>> {
+    let message = MessageParser::default().parse(raw)?;
+    let part = message.attachments().nth(index)?;
+
+    match &part.body {
+        PartType::Binary(data) => Some(data.to_vec()),
+        PartType::Text(data) => Some(data.as_bytes().to_vec()),
+        PartType::Html(data) => Some(data.as_bytes().to_vec()),
+        _ => None,
+    }
 }
 
 fn extract_text_body(message: &mail_parser::Message) -> Option<String> {

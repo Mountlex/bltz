@@ -82,6 +82,11 @@ pub enum Action {
 
     // View modes
     ToggleConversationMode, // Toggle conversation view (show sent emails in threads)
+
+    // Attachments
+    ToggleAttachments, // Toggle attachment list focus in reader
+    SaveAttachment,    // Save selected attachment to disk
+    OpenAttachment,    // Open selected attachment with system app
 }
 
 pub struct KeyBindings {
@@ -199,6 +204,14 @@ impl KeyBindings {
             Action::ToggleConversationMode,
         );
 
+        // Attachments (Reader view)
+        // Note: Some terminals send uppercase 'A' without SHIFT modifier, so we handle both
+        map.insert(shift_key('A'), Action::ToggleAttachments);
+        map.insert(
+            KeyEvent::new(KeyCode::Char('A'), KeyModifiers::NONE),
+            Action::ToggleAttachments,
+        );
+
         map
     }
 
@@ -269,6 +282,9 @@ impl KeyBindings {
 
         // View modes
         map.insert(key_code(KeyCode::F(9)), Action::ToggleConversationMode);
+
+        // Attachments (Reader view)
+        map.insert(ctrl_key('a'), Action::ToggleAttachments);
 
         map
     }
@@ -391,6 +407,9 @@ fn action_description(action: &Action) -> String {
         Action::ToggleHeaderExpand => "Expand/collapse headers".to_string(),
         Action::Help => "Toggle help".to_string(),
         Action::ToggleConversationMode => "Toggle conversation view".to_string(),
+        Action::ToggleAttachments => "Toggle attachments list".to_string(),
+        Action::SaveAttachment => "Save attachment".to_string(),
+        Action::OpenAttachment => "Open attachment".to_string(),
     }
 }
 
@@ -455,6 +474,10 @@ fn action_category(action: &Action) -> &'static str {
         Action::Help => "Help",
 
         Action::ToggleConversationMode => "Actions",
+
+        Action::ToggleAttachments | Action::SaveAttachment | Action::OpenAttachment => {
+            "Attachments"
+        }
     }
 }
 
@@ -463,13 +486,14 @@ fn category_order(category: &str) -> u8 {
     match category {
         "Navigation" => 0,
         "Actions" => 1,
-        "Accounts" => 2,
-        "Contacts" => 3,
-        "AI" => 4,
-        "Commands" => 5,
-        "Composer" => 6,
-        "Wizard" => 7,
-        "Help" => 8,
+        "Attachments" => 2,
+        "Accounts" => 3,
+        "Contacts" => 4,
+        "AI" => 5,
+        "Commands" => 6,
+        "Composer" => 7,
+        "Wizard" => 8,
+        "Help" => 9,
         _ => 99,
     }
 }

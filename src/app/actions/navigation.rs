@@ -19,7 +19,11 @@ impl App {
                 self.state.move_up();
             }
             View::Reader { .. } => {
-                self.state.reader.scroll_up();
+                if self.state.reader.show_attachments {
+                    self.state.reader.attachment_up();
+                } else {
+                    self.state.reader.scroll_up();
+                }
             }
             View::Contacts => {
                 self.contacts_move_up();
@@ -52,7 +56,11 @@ impl App {
                 self.state.move_down();
             }
             View::Reader { .. } => {
-                self.state.reader.scroll_down();
+                if self.state.reader.show_attachments {
+                    self.state.reader.attachment_down();
+                } else {
+                    self.state.reader.scroll_down();
+                }
             }
             View::Contacts => {
                 self.contacts_move_down();

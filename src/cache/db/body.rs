@@ -128,6 +128,41 @@ pub async fn insert_email_body(
     Ok(())
 }
 
+/// Insert an email body with raw message into both L1 and L2 caches.
+/// The raw message is stored for later attachment extraction.
+pub async fn insert_email_body_with_raw(
+    pool: &SqlitePool,
+    body_cache: &BodyCache,
+    account_id: &str,
+    uid: u32,
+    body: &EmailBody,
+    raw_message: &[u8],
+) -> Result<()> {
+    // Write to SQLite L2 with raw message
+    sqlx::query(
+        "INSERT OR REPLACE INTO email_bodies (account_id, uid, text_body, html_body, raw_message) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(account_id)
+    .bind(uid as i64)
+    .bind(&body.text)
+    .bind(&body.html)
+    .bind(raw_message)
+    .execute(pool)
+    .await?;
+
+    sqlx::query("UPDATE emails SET body_cached = 1 WHERE account_id = ? AND uid = ?")
+        .bind(account_id)
+        .bind(uid as i64)
+        .execute(pool)
+        .await?;
+
+    // Also populate moka L1 hot cache
+    let key = (account_id.to_string(), uid);
+    body_cache.insert(key, body.clone()).await;
+
+    Ok(())
+}
+
 /// Invalidate all body cache entries for a given account.
 pub fn invalidate_body_cache_for_account(body_cache: &BodyCache, account_id: &str) {
     // moka doesn't have a prefix-based invalidation, so we need to iterate

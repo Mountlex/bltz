@@ -11,7 +11,7 @@ use crate::command::{CommandHelp, CommandResult, PendingCommand};
 use crate::constants::ERROR_TTL_SECS;
 use crate::contacts::Contact;
 use crate::input::KeybindingEntry;
-use crate::mail::types::{ComposeEmail, EmailBody, EmailHeader};
+use crate::mail::types::{Attachment, ComposeEmail, EmailBody, EmailHeader};
 use crate::mail::{EmailThread, ThreadId};
 
 /// Info about another account for the status bar indicators
@@ -357,6 +357,14 @@ pub struct ReaderState {
     pub summary_loading: bool,
     /// Whether email headers in preview are expanded (show all lines instead of 3 per field)
     pub headers_expanded: bool,
+    /// List of attachments for the current email
+    pub attachments: Vec<Attachment>,
+    /// Currently selected attachment index (for keyboard navigation)
+    pub attachment_selected: usize,
+    /// Whether attachment list is focused
+    pub show_attachments: bool,
+    /// Pending attachment save (index, save path)
+    pub pending_attachment_save: Option<(usize, std::path::PathBuf)>,
 }
 
 impl ReaderState {
@@ -392,6 +400,20 @@ impl ReaderState {
     /// Reset scroll when changing emails
     pub fn reset_scroll(&mut self) {
         self.scroll = 0;
+    }
+
+    /// Move attachment selection down
+    pub fn attachment_down(&mut self) {
+        if !self.attachments.is_empty() && self.attachment_selected < self.attachments.len() - 1 {
+            self.attachment_selected += 1;
+        }
+    }
+
+    /// Move attachment selection up
+    pub fn attachment_up(&mut self) {
+        if self.attachment_selected > 0 {
+            self.attachment_selected -= 1;
+        }
     }
 }
 

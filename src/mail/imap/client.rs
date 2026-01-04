@@ -255,6 +255,26 @@ impl ImapClient {
         Ok(results)
     }
 
+    /// Fetch raw message data for a single email (used for attachment extraction).
+    pub async fn fetch_raw(&mut self, uid: u32) -> Result<Vec<u8>> {
+        self.ensure_connected().await?;
+
+        let session = self.session()?;
+        let mut messages = session
+            .uid_fetch(uid.to_string(), "BODY[]")
+            .await
+            .context("Failed to fetch raw message")?;
+
+        while let Some(result) = messages.next().await {
+            let fetch = result.context("Failed to fetch message")?;
+            if let Some(body) = fetch.body() {
+                return Ok(body.to_vec());
+            }
+        }
+
+        anyhow::bail!("No body data found for UID {}", uid)
+    }
+
     //
     // Flag Operations
     //

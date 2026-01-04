@@ -39,6 +39,11 @@ fn handle_key(key: KeyEvent, state: &AppState, bindings: &KeyBindings) -> InputR
         return handle_contacts_input(key, bindings);
     }
 
+    // Check if we're in attachment view (reader with attachments focused)
+    if is_attachment_mode(state) {
+        return handle_attachment_input(key, bindings);
+    }
+
     // Check if we're in help mode
     if is_help_mode(state) {
         return handle_help_input(key, bindings);
@@ -209,6 +214,28 @@ fn is_add_account_mode(state: &AppState) -> bool {
 
 fn is_contacts_mode(state: &AppState) -> bool {
     matches!(state.view, View::Contacts)
+}
+
+fn is_attachment_mode(state: &AppState) -> bool {
+    matches!(state.view, View::Reader { .. }) && state.reader.show_attachments
+}
+
+fn handle_attachment_input(key: KeyEvent, bindings: &KeyBindings) -> InputResult {
+    // In attachment view: j/k navigate, Enter opens, s saves, A/Esc exits
+    if let Some(action) = bindings.get(&key) {
+        match action {
+            Action::Up | Action::Down => return InputResult::Action(action),
+            Action::ToggleAttachments => return InputResult::Action(action),
+            _ => {}
+        }
+    }
+
+    match key.code {
+        KeyCode::Char('s') => InputResult::Action(Action::SaveAttachment),
+        KeyCode::Enter => InputResult::Action(Action::OpenAttachment),
+        KeyCode::Esc => InputResult::Action(Action::ToggleAttachments), // Close attachment view
+        _ => InputResult::Continue,
+    }
 }
 
 fn is_contacts_edit_mode(state: &AppState) -> bool {

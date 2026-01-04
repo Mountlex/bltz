@@ -1,8 +1,9 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
+    style::Modifier,
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
 use super::theme::Theme;
@@ -10,6 +11,7 @@ use super::widgets::{
     StatusInfo, enhanced_status_bar, error_bar, format_date, help_bar, sanitize_text, spinner_char,
 };
 use crate::app::state::AppState;
+use crate::mail::types::Attachment;
 
 pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
     // Find the email first to determine header height
@@ -20,13 +22,26 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
         .is_some_and(|cc| !cc.trim().is_empty());
     let header_lines = if has_cc { 6 } else { 5 };
 
+    // Determine attachment panel height
+    let show_attachments = state.reader.show_attachments && !state.reader.attachments.is_empty();
+    let attachment_height = if show_attachments {
+        // Show up to 5 attachments + 1 line for title/border
+        (state.reader.attachments.len().min(5) + 2) as u16
+    } else if email.is_some_and(|e| e.has_attachments) {
+        // Show attachment indicator line
+        1
+    } else {
+        0
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),            // Status bar
-            Constraint::Length(header_lines), // Headers
-            Constraint::Min(0),               // Body
-            Constraint::Length(1),            // Help bar
+            Constraint::Length(1),                 // Status bar
+            Constraint::Length(header_lines),      // Headers
+            Constraint::Length(attachment_height), // Attachments (if any)
+            Constraint::Min(0),                    // Body
+            Constraint::Length(1),                 // Help bar
         ])
         .split(frame.area());
 
@@ -65,8 +80,21 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
         // Headers
         render_headers(frame, chunks[1], email);
 
+        // Attachments
+        if show_attachments {
+            render_attachments(
+                frame,
+                chunks[2],
+                &state.reader.attachments,
+                state.reader.attachment_selected,
+                true,
+            );
+        } else if email.has_attachments {
+            render_attachment_indicator(frame, chunks[2], state.reader.attachments.len());
+        }
+
         // Body
-        render_body(frame, chunks[2], state, uid);
+        render_body(frame, chunks[3], state, uid);
     } else {
         let paragraph = Paragraph::new("Email not found").style(Theme::error_bar());
         frame.render_widget(paragraph, chunks[1]);
@@ -74,14 +102,30 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
 
     // Help bar or error
     if let Some(ref error) = state.status.error {
-        error_bar(frame, chunks[3], error);
+        error_bar(frame, chunks[4], error);
     } else {
-        // Dynamic hints based on AI summary mode
-        let hints: &[(&str, &str)] = if state.reader.show_summary {
+        // Dynamic hints based on context
+        let hints: &[(&str, &str)] = if state.reader.show_attachments {
+            // Attachment mode hints
+            &[
+                ("j/k", "select"),
+                ("Enter", "open"),
+                ("s", "save"),
+                ("Esc", "back"),
+            ]
+        } else if state.reader.show_summary {
             &[
                 ("T", "full"),
                 ("j/k", "scroll"),
                 ("r", "reply"),
+                ("Esc", "back"),
+            ]
+        } else if email.is_some_and(|e| e.has_attachments) {
+            &[
+                ("A", "attach"),
+                ("j/k", "scroll"),
+                ("r", "reply"),
+                ("f", "fwd"),
                 ("Esc", "back"),
             ]
         } else {
@@ -94,7 +138,7 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
                 ("Esc", "back"),
             ]
         };
-        help_bar(frame, chunks[3], hints);
+        help_bar(frame, chunks[4], hints);
     }
 }
 
@@ -152,6 +196,56 @@ fn render_headers(
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, inner);
+}
+
+fn render_attachment_indicator(frame: &mut Frame, area: ratatui::layout::Rect, count: usize) {
+    let text = if count > 0 {
+        format!(" {} {} - press A to view", "📎", count)
+    } else {
+        " 📎 Has attachments - press A to load".to_string()
+    };
+
+    let paragraph = Paragraph::new(text).style(Theme::text_muted());
+    frame.render_widget(paragraph, area);
+}
+
+fn render_attachments(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    attachments: &[Attachment],
+    selected: usize,
+    focused: bool,
+) {
+    let block = Block::default()
+        .title(" Attachments ")
+        .borders(Borders::TOP)
+        .border_style(if focused {
+            Theme::border_focused()
+        } else {
+            Theme::border()
+        });
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let items: Vec<ListItem> = attachments
+        .iter()
+        .enumerate()
+        .map(|(i, att)| {
+            let line = format!("{} {} ({})", att.icon(), att.filename, att.formatted_size());
+
+            let style = if focused && i == selected {
+                Theme::selected().add_modifier(Modifier::BOLD)
+            } else {
+                Theme::text()
+            };
+
+            ListItem::new(line).style(style)
+        })
+        .collect();
+
+    let list = List::new(items);
+    frame.render_widget(list, inner);
 }
 
 fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState, uid: u32) {

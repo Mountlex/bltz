@@ -331,6 +331,25 @@ impl App {
                         self.reload_from_cache().await;
                     }
                 }
+                ImapEvent::AttachmentFetched {
+                    uid,
+                    attachment_index,
+                    attachment,
+                    data,
+                } => {
+                    if is_active {
+                        self.handle_attachment_fetched(uid, attachment_index, attachment, data);
+                    }
+                }
+                ImapEvent::AttachmentFetchFailed {
+                    uid,
+                    attachment_index,
+                    error,
+                } => {
+                    if is_active {
+                        self.handle_attachment_fetch_failed(uid, attachment_index, error);
+                    }
+                }
                 ImapEvent::Error(e) => {
                     if is_active {
                         self.state.status.loading = false;

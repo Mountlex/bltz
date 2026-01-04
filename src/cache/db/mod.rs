@@ -5,8 +5,10 @@
 //! - `schema.rs` - Database schema initialization and migrations
 //! - `email.rs` - Email header CRUD operations
 //! - `body.rs` - Email body caching with L1 (moka) and L2 (SQLite)
+//! - `attachment.rs` - Attachment metadata caching
 //! - `search.rs` - Full-text search using FTS5
 
+mod attachment;
 mod body;
 mod email;
 mod schema;
@@ -21,7 +23,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use super::sync::SyncState;
-use crate::mail::types::{EmailBody, EmailFlags, EmailHeader};
+use crate::mail::types::{Attachment, EmailBody, EmailFlags, EmailHeader};
 
 /// Connection pool size - allows concurrent reads.
 const POOL_SIZE: u32 = 4;
@@ -256,6 +258,53 @@ impl Cache {
 
     pub async fn search_body_fts(&self, account_id: &str, query: &str) -> Result<HashSet<u32>> {
         search::search_body_fts(&self.pool, account_id, query).await
+    }
+
+    //
+    // Attachment Operations (delegated to attachment module)
+    //
+
+    pub async fn insert_attachments(
+        &self,
+        account_id: &str,
+        email_uid: u32,
+        attachments: &[Attachment],
+    ) -> Result<()> {
+        attachment::insert_attachments(&self.pool, account_id, email_uid, attachments).await
+    }
+
+    pub async fn get_attachments(
+        &self,
+        account_id: &str,
+        email_uid: u32,
+    ) -> Result<Vec<Attachment>> {
+        attachment::get_attachments(&self.pool, account_id, email_uid).await
+    }
+
+    pub async fn get_raw_message(&self, account_id: &str, uid: u32) -> Result<Option<Vec<u8>>> {
+        attachment::get_raw_message(&self.pool, account_id, uid).await
+    }
+
+    //
+    // Email Body with Raw Message (extended operations)
+    //
+
+    pub async fn insert_email_body_with_raw(
+        &self,
+        account_id: &str,
+        uid: u32,
+        body: &EmailBody,
+        raw_message: &[u8],
+    ) -> Result<()> {
+        body::insert_email_body_with_raw(
+            &self.pool,
+            &self.body_cache,
+            account_id,
+            uid,
+            body,
+            raw_message,
+        )
+        .await
     }
 }
 

@@ -10,8 +10,10 @@
 //! - `wizard`: Add account wizard
 //! - `contacts`: Contact management
 //! - `ai`: AI-powered features (summarization, polish)
+//! - `attachment`: Attachment viewing and saving
 
 mod ai;
+mod attachment;
 mod command;
 mod compose;
 mod contacts;
@@ -196,6 +198,17 @@ impl App {
             // View modes
             Action::ToggleConversationMode => {
                 self.toggle_conversation_mode().await;
+            }
+
+            // Attachments
+            Action::ToggleAttachments => {
+                self.toggle_attachments().await;
+            }
+            Action::SaveAttachment => {
+                self.save_attachment().await;
+            }
+            Action::OpenAttachment => {
+                self.open_attachment().await;
             }
         }
         Ok(())

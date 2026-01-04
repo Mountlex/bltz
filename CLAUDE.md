@@ -102,6 +102,16 @@ User Input → Input Handler → Action Processing → IMAP Actor Commands
 | C | Toggle conversation view | Show/hide sent emails in inbox threads |
 | S | View starred | Toggle starred-only view |
 
+### Attachments (Vim mode)
+
+| Key | Action | Context |
+|-----|--------|---------|
+| A | Toggle attachment list | Reader |
+| j/k | Navigate attachments | Attachment list |
+| Enter | Open with system app | Attachment list |
+| s | Save to ~/Downloads | Attachment list |
+| Esc | Close attachment list | Attachment list |
+
 ### AI Features (Vim mode)
 
 | Key | Action | Context |

@@ -15,7 +15,7 @@ use tokio_util::compat::Compat;
 
 use crate::config::{AuthMethod, ImapConfig};
 
-use super::types::{EmailBody, EmailFlags, EmailHeader};
+use super::types::{Attachment, EmailBody, EmailFlags, EmailHeader};
 
 // Re-export public API
 pub use actor::spawn_imap_actor;
@@ -70,6 +70,12 @@ pub enum ImapCommand {
     PrefetchFolder {
         folder: String,
     },
+    /// Fetch attachment data by index from an email
+    FetchAttachment {
+        uid: u32,
+        folder: String,
+        attachment_index: usize,
+    },
     Shutdown,
 }
 
@@ -117,6 +123,19 @@ pub enum ImapEvent {
     /// Background prefetch of a folder completed
     PrefetchComplete {
         folder: String,
+    },
+    /// Attachment data fetched successfully
+    AttachmentFetched {
+        uid: u32,
+        attachment_index: usize,
+        attachment: Attachment,
+        data: Vec<u8>,
+    },
+    /// Attachment fetch failed
+    AttachmentFetchFailed {
+        uid: u32,
+        attachment_index: usize,
+        error: String,
     },
     Error(String),
 }

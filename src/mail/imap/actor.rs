@@ -10,6 +10,7 @@ use crate::cache::{Cache, SyncState};
 use crate::constants::{
     FLAG_SYNC_BATCH_SIZE, IDLE_TIMEOUT_SECS, MAX_RETRIES, MAX_RETRY_DELAY_SECS,
 };
+use crate::mail::parser::{extract_attachment_data, parse_attachments};
 use crate::mail::types::EmailFlags;
 
 use super::{ImapActorHandle, ImapClient, ImapCommand, ImapEvent, SyncResult, folder_cache_key};
@@ -537,6 +538,126 @@ async fn handle_command(
                 && client.select_folder(&original_folder).await.is_ok()
             {
                 *current_folder = original_folder;
+            }
+        }
+        ImapCommand::FetchAttachment {
+            uid,
+            folder,
+            attachment_index,
+        } => {
+            let body_cache_key = folder_cache_key(account_id, &folder);
+
+            // First try to get raw message from cache
+            if let Ok(Some(raw)) = cache.get_raw_message(&body_cache_key, uid).await {
+                let attachments = parse_attachments(&raw);
+                if let Some(attachment) = attachments.get(attachment_index).cloned()
+                    && let Some(data) = extract_attachment_data(&raw, attachment_index)
+                {
+                    event_tx
+                        .send(ImapEvent::AttachmentFetched {
+                            uid,
+                            attachment_index,
+                            attachment,
+                            data,
+                        })
+                        .await
+                        .ok();
+                    return;
+                }
+            }
+
+            // Need to fetch from server
+            let needs_folder_switch = folder != *current_folder;
+            if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
+                event_tx
+                    .send(ImapEvent::AttachmentFetchFailed {
+                        uid,
+                        attachment_index,
+                        error: format!("Failed to select folder: {}", e),
+                    })
+                    .await
+                    .ok();
+                return;
+            }
+
+            // Fetch raw message from server
+            match client.fetch_raw(uid).await {
+                Ok(raw) => {
+                    let attachments = parse_attachments(&raw);
+                    if let Some(attachment) = attachments.get(attachment_index).cloned() {
+                        if let Some(data) = extract_attachment_data(&raw, attachment_index) {
+                            // Cache the raw message and attachment metadata for future use
+                            let body = crate::mail::parser::parse_body(&raw);
+                            if let Err(e) = cache
+                                .insert_email_body_with_raw(&body_cache_key, uid, &body, &raw)
+                                .await
+                            {
+                                tracing::warn!(
+                                    "Failed to cache raw message for UID {}: {}",
+                                    uid,
+                                    e
+                                );
+                            }
+                            if let Err(e) = cache
+                                .insert_attachments(&body_cache_key, uid, &attachments)
+                                .await
+                            {
+                                tracing::warn!(
+                                    "Failed to cache attachments for UID {}: {}",
+                                    uid,
+                                    e
+                                );
+                            }
+
+                            event_tx
+                                .send(ImapEvent::AttachmentFetched {
+                                    uid,
+                                    attachment_index,
+                                    attachment,
+                                    data,
+                                })
+                                .await
+                                .ok();
+                        } else {
+                            event_tx
+                                .send(ImapEvent::AttachmentFetchFailed {
+                                    uid,
+                                    attachment_index,
+                                    error: "Failed to extract attachment data".to_string(),
+                                })
+                                .await
+                                .ok();
+                        }
+                    } else {
+                        event_tx
+                            .send(ImapEvent::AttachmentFetchFailed {
+                                uid,
+                                attachment_index,
+                                error: format!(
+                                    "Attachment index {} not found (only {} attachments)",
+                                    attachment_index,
+                                    attachments.len()
+                                ),
+                            })
+                            .await
+                            .ok();
+                    }
+                }
+                Err(e) => {
+                    event_tx
+                        .send(ImapEvent::AttachmentFetchFailed {
+                            uid,
+                            attachment_index,
+                            error: e.to_string(),
+                        })
+                        .await
+                        .ok();
+                }
+            }
+
+            // Switch back to original folder
+            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
+                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
             }
         }
         ImapCommand::Shutdown => {

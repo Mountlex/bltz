@@ -283,3 +283,61 @@ impl Default for ComposeEmail {
         Self::new()
     }
 }
+
+/// Email attachment metadata
+#[derive(Debug, Clone)]
+pub struct Attachment {
+    /// Database ID (0 if not saved)
+    #[allow(dead_code)]
+    pub id: i64,
+    /// Display filename
+    pub filename: String,
+    /// MIME type (e.g., "application/pdf")
+    pub mime_type: String,
+    /// Size in bytes
+    pub size: usize,
+    /// Content-ID for inline attachments
+    pub content_id: Option<String>,
+}
+
+impl Attachment {
+    /// Get a file type icon based on MIME type
+    pub fn icon(&self) -> &'static str {
+        match self.mime_type.split('/').next() {
+            Some("image") => "[IMG]",
+            Some("audio") => "[AUD]",
+            Some("video") => "[VID]",
+            Some("text") => "[TXT]",
+            Some("application") => {
+                if self.mime_type.contains("pdf") {
+                    "[PDF]"
+                } else if self.mime_type.contains("zip")
+                    || self.mime_type.contains("tar")
+                    || self.mime_type.contains("gzip")
+                {
+                    "[ZIP]"
+                } else {
+                    "[FILE]"
+                }
+            }
+            _ => "[FILE]",
+        }
+    }
+
+    /// Format size for display (e.g., "1.5 MB")
+    pub fn formatted_size(&self) -> String {
+        const KB: usize = 1024;
+        const MB: usize = KB * 1024;
+        const GB: usize = MB * 1024;
+
+        if self.size >= GB {
+            format!("{:.1} GB", self.size as f64 / GB as f64)
+        } else if self.size >= MB {
+            format!("{:.1} MB", self.size as f64 / MB as f64)
+        } else if self.size >= KB {
+            format!("{:.1} KB", self.size as f64 / KB as f64)
+        } else {
+            format!("{} B", self.size)
+        }
+    }
+}
