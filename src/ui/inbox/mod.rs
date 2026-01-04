@@ -67,7 +67,7 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
     };
 
     // Status bar
-    let visible_count = state.visible_threads().len();
+    let visible_count = state.visible_thread_count();
     let folder_name = if state.folder.current.is_empty() {
         "INBOX"
     } else {
@@ -328,15 +328,17 @@ fn render_email_body(frame: &mut Frame, area: Rect, state: &AppState) {
     // Clear the area first to prevent rendering artifacts when content changes
     frame.render_widget(Clear, area);
 
-    let body_text: String = if let Some(ref body) = state.reader.body {
-        body.display_text()
+    // Get sanitized body text - uses cache when body is loaded, otherwise show loading/preview
+    let sanitized = if state.reader.body.is_some() {
+        // Use cached sanitized body (computed once per body change)
+        state.reader.sanitized_body(sanitize_text)
     } else if state.status.loading {
         format!("{} Loading...", spinner_char())
     } else {
         // Show preview if body not loaded
         if let Some(email) = state.current_email_from_thread() {
             if let Some(ref preview) = email.preview {
-                preview.clone()
+                sanitize_text(preview)
             } else {
                 "[Press Enter to load full content]".to_string()
             }
@@ -344,9 +346,6 @@ fn render_email_body(frame: &mut Frame, area: Rect, state: &AppState) {
             String::new()
         }
     };
-
-    // Sanitize text: remove ANSI sequences and control characters
-    let sanitized = sanitize_text(&body_text);
 
     let text = Text::raw(sanitized);
 

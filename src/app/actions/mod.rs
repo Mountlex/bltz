@@ -223,7 +223,7 @@ impl App {
         self.state.conversation_mode = !self.state.conversation_mode;
 
         // Clear reader/prefetch state since email list will change
-        self.state.reader.body = None;
+        self.state.reader.set_body(None);
         self.last_prefetch_uid = None;
         self.pending_prefetch = None;
         self.in_flight_fetches.clear();

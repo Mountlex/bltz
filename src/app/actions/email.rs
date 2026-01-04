@@ -57,11 +57,11 @@ impl App {
             // Switch to reader view
             self.state.view = View::Reader { uid };
             self.state.reader.reset_scroll();
-            self.state.reader.body = None;
+            self.state.reader.set_body(None);
 
             // Check local cache first (instant) - use email's folder cache key
             if let Ok(Some(body)) = self.cache.get_email_body(&cache_key, uid).await {
-                self.state.reader.body = Some(body);
+                self.state.reader.set_body(Some(body));
                 return;
             }
 
@@ -122,15 +122,15 @@ impl App {
                     .map(|e| self.email_cache_key(e))
                     .unwrap_or_else(|| self.cache_key());
                 if let Ok(Some(body)) = self.cache.get_email_body(&cache_key, uid).await {
-                    self.state.reader.body = Some(body);
+                    self.state.reader.set_body(Some(body));
                     self.last_prefetch_uid = Some(uid);
                 } else {
-                    self.state.reader.body = None;
+                    self.state.reader.set_body(None);
                 }
             }
             View::Composer { .. } => {
                 self.state.view = View::Inbox;
-                self.state.reader.body = None;
+                self.state.reader.set_body(None);
             }
             View::Contacts => {
                 // If editing, cancel edit; otherwise go back to inbox
@@ -201,7 +201,7 @@ impl App {
                 // Reset selection state
                 self.state.thread.selected = 0;
                 self.state.thread.selected_in_thread = 0;
-                self.state.reader.body = None;
+                self.state.reader.set_body(None);
                 self.state.clear_search();
                 self.in_flight_fetches.clear();
                 self.last_prefetch_uid = None;
@@ -268,11 +268,11 @@ impl App {
                 // Clear stale state if it references deleted email
                 if self.last_prefetch_uid == Some(uid) {
                     self.last_prefetch_uid = None;
-                    self.state.reader.body = None;
+                    self.state.reader.set_body(None);
                 }
 
                 // Adjust selection if out of bounds
-                let visible_count = self.state.visible_threads().len();
+                let visible_count = self.state.visible_thread_count();
                 if visible_count == 0 {
                     self.state.thread.selected = 0;
                     self.state.thread.selected_in_thread = 0;

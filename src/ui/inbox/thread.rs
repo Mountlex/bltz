@@ -48,94 +48,136 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
         return;
     }
 
-    // Build all visible items with their selection state
-    let mut items: Vec<ListItem> = Vec::new();
-    let mut selected_index: Option<usize> = None;
+    let visible_lines = inner.height as usize;
+
+    // Phase 1: Calculate line counts and find selected position (no allocations)
+    // Each thread/email header takes 2 lines
+    let mut total_lines = 0usize;
+    let mut selected_line = 0usize;
+    let mut thread_line_offsets: Vec<usize> = Vec::with_capacity(visible.len());
 
     for (thread_idx, thread) in visible.iter().enumerate() {
+        thread_line_offsets.push(total_lines);
         let is_current_thread = thread_idx == state.thread.selected;
         let is_expanded = state.is_thread_expanded(&thread.id);
 
         if is_expanded {
-            // Render thread header (collapsed style) as first item
-            let is_header_selected = is_current_thread && state.thread.selected_in_thread == 0;
-            if is_header_selected {
-                selected_index = Some(items.len());
+            // Header takes 2 lines
+            if is_current_thread && state.thread.selected_in_thread == 0 {
+                selected_line = total_lines;
             }
-            let latest_email = thread.latest(&state.emails);
-            let match_type = state.get_match_type(latest_email.uid);
-            let header_items = render_thread_header(
-                thread,
-                &state.emails,
-                is_header_selected,
-                inner.width,
-                true,
-                &state.search.query,
-                match_type,
-            );
-            items.extend(header_items);
+            total_lines += 2;
 
-            // Render each email in thread
-            for (email_idx, email) in thread.emails(&state.emails).enumerate() {
-                let is_email_selected =
-                    is_current_thread && state.thread.selected_in_thread == email_idx + 1;
-                if is_email_selected {
-                    selected_index = Some(items.len());
-                }
-                let email_match_type = state.get_match_type(email.uid);
-                let email_items = render_thread_email(
-                    email,
-                    is_email_selected,
-                    inner.width,
-                    &state.search.query,
-                    email_match_type,
-                );
-                items.extend(email_items);
+            // Each email takes 2 lines
+            let email_count = thread.email_indices.len();
+            if is_current_thread && state.thread.selected_in_thread > 0 {
+                // selected_in_thread is 1-indexed for emails in expanded thread
+                let email_offset = state.thread.selected_in_thread.saturating_sub(1);
+                selected_line = total_lines + (email_offset * 2);
             }
+            total_lines += email_count * 2;
         } else {
-            // Collapsed thread
-            let is_selected = is_current_thread;
-            if is_selected {
-                selected_index = Some(items.len());
+            // Collapsed thread takes 2 lines
+            if is_current_thread {
+                selected_line = total_lines;
             }
-            let latest_email = thread.latest(&state.emails);
-            let match_type = state.get_match_type(latest_email.uid);
-            let thread_items = render_thread_header(
-                thread,
-                &state.emails,
-                is_selected,
-                inner.width,
-                false,
-                &state.search.query,
-                match_type,
-            );
-            items.extend(thread_items);
+            total_lines += 2;
         }
     }
 
-    // Virtual scrolling based on selected item
-    let visible_lines = inner.height as usize;
-    let total_items = items.len();
+    // Phase 2: Calculate scroll offset based on selection
+    let target_position = visible_lines / SCROLL_TARGET_FRACTION;
+    let scroll_offset = selected_line.saturating_sub(target_position);
+    let scroll_offset = scroll_offset.min(total_lines.saturating_sub(visible_lines));
+    let scroll_end = scroll_offset + visible_lines;
 
-    // Calculate scroll offset to keep selected item visible
-    // Since we can't persist scroll state, center selection in viewport
-    let scroll_offset = if let Some(sel_idx) = selected_index {
-        // Each thread/email takes 2 lines, so selected item spans sel_idx to sel_idx+1
-        // Try to keep selection near the top third of the visible area for better context
-        let target_position = visible_lines / SCROLL_TARGET_FRACTION;
-        sel_idx.saturating_sub(target_position)
-    } else {
-        0
-    };
+    // Phase 3: Find which threads fall in the visible range
+    let first_visible_thread = thread_line_offsets
+        .iter()
+        .rposition(|&offset| offset <= scroll_offset)
+        .unwrap_or(0);
 
-    // Ensure we don't scroll past the end
-    let scroll_offset = scroll_offset.min(total_items.saturating_sub(visible_lines));
+    // Phase 4: Build items ONLY for visible threads
+    let mut items: Vec<ListItem> = Vec::with_capacity(visible_lines + 4);
+    let mut current_line = thread_line_offsets[first_visible_thread];
 
-    let end = (scroll_offset + visible_lines).min(total_items);
+    for (thread_idx, thread) in visible.iter().enumerate().skip(first_visible_thread) {
+        // Stop if we've gone past the visible area
+        if current_line >= scroll_end {
+            break;
+        }
+
+        let is_current_thread = thread_idx == state.thread.selected;
+        let is_expanded = state.is_thread_expanded(&thread.id);
+
+        if is_expanded {
+            // Render thread header
+            let is_header_selected = is_current_thread && state.thread.selected_in_thread == 0;
+            let latest_email = thread.latest(&state.emails);
+            let match_type = state.get_match_type(latest_email.uid);
+
+            // Only render if visible
+            if current_line + 2 > scroll_offset {
+                let header_items = render_thread_header(
+                    thread,
+                    &state.emails,
+                    is_header_selected,
+                    inner.width,
+                    true,
+                    &state.search.query,
+                    match_type,
+                );
+                items.extend(header_items);
+            }
+            current_line += 2;
+
+            // Render each email in thread
+            for (email_idx, email) in thread.emails(&state.emails).enumerate() {
+                if current_line >= scroll_end {
+                    break;
+                }
+                if current_line + 2 > scroll_offset {
+                    let is_email_selected =
+                        is_current_thread && state.thread.selected_in_thread == email_idx + 1;
+                    let email_match_type = state.get_match_type(email.uid);
+                    let email_items = render_thread_email(
+                        email,
+                        is_email_selected,
+                        inner.width,
+                        &state.search.query,
+                        email_match_type,
+                    );
+                    items.extend(email_items);
+                }
+                current_line += 2;
+            }
+        } else {
+            // Collapsed thread - 2 lines
+            if current_line + 2 > scroll_offset {
+                let is_selected = is_current_thread;
+                let latest_email = thread.latest(&state.emails);
+                let match_type = state.get_match_type(latest_email.uid);
+                let thread_items = render_thread_header(
+                    thread,
+                    &state.emails,
+                    is_selected,
+                    inner.width,
+                    false,
+                    &state.search.query,
+                    match_type,
+                );
+                items.extend(thread_items);
+            }
+            current_line += 2;
+        }
+    }
+
+    // Skip items before scroll_offset (for partially visible threads at top)
+    let skip_lines = scroll_offset.saturating_sub(thread_line_offsets[first_visible_thread]);
     let visible_items: Vec<ListItem> = items
         .into_iter()
-        .skip(scroll_offset)
-        .take(end.saturating_sub(scroll_offset))
+        .skip(skip_lines)
+        .take(visible_lines)
         .collect();
 
     let list = List::new(visible_items);

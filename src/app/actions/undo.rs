@@ -140,7 +140,7 @@ impl App {
         self.state.invalidate_search_cache();
 
         // Restore selection (or clamp to bounds)
-        let visible_count = self.state.visible_threads().len();
+        let visible_count = self.state.visible_thread_count();
         self.state.thread.selected = thread_index.min(visible_count.saturating_sub(1));
         self.state.thread.selected_in_thread = 0;
 

@@ -179,7 +179,7 @@ pub fn group_into_threads(emails: &[EmailHeader]) -> Vec<EmailThread> {
         .collect();
 
     // Sort threads by latest date descending
-    threads.sort_by(|a, b| b.latest_date.cmp(&a.latest_date));
+    threads.sort_unstable_by(|a, b| b.latest_date.cmp(&a.latest_date));
 
     threads
 }
@@ -240,6 +240,15 @@ pub fn merge_into_threads(
         .map(|(idx, thread)| (thread.id.clone(), idx))
         .collect();
 
+    // Build email_idx -> thread_idx map for O(1) parent lookup (instead of O(n) linear search)
+    let mut email_to_thread: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::with_capacity(new_email_start_idx);
+    for (thread_idx, thread) in threads.iter().enumerate() {
+        for &email_idx in &thread.email_indices {
+            email_to_thread.insert(email_idx, thread_idx);
+        }
+    }
+
     // Process new emails - collect updates to apply later
     struct ThreadUpdate {
         thread_idx: usize,
@@ -266,10 +275,8 @@ pub fn merge_into_threads(
             });
 
         if let Some(parent_idx) = parent_idx {
-            // Find which thread the parent belongs to
-            let parent_thread_idx = threads
-                .iter()
-                .position(|t| t.email_indices.contains(&parent_idx));
+            // Find which thread the parent belongs to - O(1) HashMap lookup instead of O(n) linear search
+            let parent_thread_idx = email_to_thread.get(&parent_idx).copied();
 
             if let Some(thread_idx) = parent_thread_idx {
                 thread_updates.push(ThreadUpdate {
@@ -369,7 +376,7 @@ pub fn merge_into_threads(
 
     // Append new threads and re-sort by latest date
     threads.extend(new_threads);
-    threads.sort_by(|a, b| b.latest_date.cmp(&a.latest_date));
+    threads.sort_unstable_by(|a, b| b.latest_date.cmp(&a.latest_date));
 
     true
 }

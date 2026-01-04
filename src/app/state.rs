@@ -259,11 +259,15 @@ impl StatusState {
     }
 
     /// Clear error if it's been visible for more than the TTL
-    pub fn clear_error_if_expired(&mut self) {
+    /// Clear error if TTL expired. Returns true if error was cleared.
+    pub fn clear_error_if_expired(&mut self) -> bool {
         if let Some(time) = self.error_time
             && time.elapsed().as_secs() >= ERROR_TTL_SECS
         {
             self.clear_error();
+            true
+        } else {
+            false
         }
     }
 
@@ -344,12 +348,18 @@ pub struct SearchState {
     pub cached_view_mode: ViewMode,
     pub header_match_uids: HashSet<u32>,
     pub body_match_uids: HashSet<u32>,
+    /// Cached Aho-Corasick automaton for search (rebuilt when query changes).
+    /// Uses RefCell for interior mutability in compute_visible_threads.
+    cached_automaton: std::cell::RefCell<Option<(String, AhoCorasick)>>,
 }
 
 /// Reader view state
 #[derive(Debug, Clone, Default)]
 pub struct ReaderState {
     pub body: Option<EmailBody>,
+    /// Cached sanitized body text (invalidated when body changes).
+    /// Uses RefCell for interior mutability so rendering can populate cache.
+    pub cached_sanitized: std::cell::RefCell<Option<String>>,
     pub scroll: usize,
     pub show_summary: bool,
     pub cached_summary: Option<(u32, String)>,
@@ -368,6 +378,31 @@ pub struct ReaderState {
 }
 
 impl ReaderState {
+    /// Set body and invalidate sanitized cache
+    pub fn set_body(&mut self, body: Option<EmailBody>) {
+        self.body = body;
+        *self.cached_sanitized.borrow_mut() = None;
+    }
+
+    /// Get sanitized body text, computing and caching if needed.
+    /// Uses interior mutability to cache on first access.
+    pub fn sanitized_body(&self, sanitize_fn: fn(&str) -> String) -> String {
+        {
+            let cache = self.cached_sanitized.borrow();
+            if let Some(ref s) = *cache {
+                return s.clone();
+            }
+        }
+        // Cache miss - compute and store
+        let sanitized = if let Some(ref body) = self.body {
+            sanitize_fn(&body.display_text())
+        } else {
+            String::new()
+        };
+        *self.cached_sanitized.borrow_mut() = Some(sanitized.clone());
+        sanitized
+    }
+
     /// Get maximum scroll value based on current content
     pub fn max_scroll(&self) -> usize {
         if let Some(ref body) = self.body {
@@ -542,7 +577,7 @@ impl AppState {
 
     /// Move selection up (thread-aware, respects search filter)
     pub fn move_up(&mut self) {
-        let visible_len = self.visible_threads().len();
+        let visible_len = self.visible_thread_count();
         if visible_len == 0 {
             return;
         }
@@ -588,7 +623,7 @@ impl AppState {
     /// Clamp selection to visible threads (call after search/filter changes)
     /// This prevents selection from pointing to a non-visible thread
     pub fn clamp_selection_to_visible(&mut self) {
-        let visible_count = self.visible_threads().len();
+        let visible_count = self.visible_thread_count();
         if visible_count == 0 {
             self.thread.selected = 0;
             self.thread.selected_in_thread = 0;
@@ -609,12 +644,41 @@ impl AppState {
         self.status.clear_error();
     }
 
-    pub fn clear_error_if_expired(&mut self) {
-        self.status.clear_error_if_expired();
+    pub fn clear_error_if_expired(&mut self) -> bool {
+        self.status.clear_error_if_expired()
     }
 
     pub fn set_status(&mut self, msg: impl ToString) {
         self.status.set_message(msg);
+    }
+
+    /// Get count of visible threads (O(1) from cache when possible).
+    /// Prefer this over `visible_threads().len()` to avoid allocations.
+    pub fn visible_thread_count(&self) -> usize {
+        if let Some(ref indices) = self.search.cached_visible_indices
+            && self.search.query == self.search.cached_query
+            && self.view_mode == self.search.cached_view_mode
+        {
+            indices.len()
+        } else {
+            // Cache miss - fall back to compute
+            self.compute_visible_threads().len()
+        }
+    }
+
+    /// Get cached visible thread indices as a slice.
+    /// Returns None if cache needs rebuilding (caller should use visible_threads() instead).
+    /// This avoids allocation when the caller can iterate indices directly.
+    #[allow(dead_code)] // Reserved for future use
+    pub fn visible_thread_indices(&self) -> Option<&[usize]> {
+        if let Some(ref indices) = self.search.cached_visible_indices
+            && self.search.query == self.search.cached_query
+            && self.view_mode == self.search.cached_view_mode
+        {
+            Some(indices.as_slice())
+        } else {
+            None
+        }
     }
 
     /// Get threads filtered by search query and view mode.
@@ -641,12 +705,29 @@ impl AppState {
         let filtered: Vec<&EmailThread> = if self.search.query.is_empty() {
             self.thread.threads.iter().collect()
         } else {
-            // Build aho-corasick automaton for fast matching
+            // Get or build aho-corasick automaton (cached for repeated calls with same query)
             let query_lower = self.search.query.to_lowercase();
-            let ac = match AhoCorasick::new([&query_lower]) {
-                Ok(ac) => ac,
-                Err(_) => return self.thread.threads.iter().collect(), // Fallback: show all threads on invalid pattern
+
+            // Check if we have a cached automaton for this query
+            let needs_rebuild = {
+                let cache = self.search.cached_automaton.borrow();
+                cache
+                    .as_ref()
+                    .map(|(q, _)| q != &query_lower)
+                    .unwrap_or(true)
             };
+
+            if needs_rebuild {
+                // Build new automaton and cache it
+                let ac = match AhoCorasick::new([&query_lower]) {
+                    Ok(ac) => ac,
+                    Err(_) => return self.thread.threads.iter().collect(),
+                };
+                *self.search.cached_automaton.borrow_mut() = Some((query_lower.clone(), ac));
+            }
+
+            let cache = self.search.cached_automaton.borrow();
+            let ac = &cache.as_ref().unwrap().1;
 
             self.thread
                 .threads

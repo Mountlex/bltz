@@ -26,13 +26,20 @@ impl App {
 
         loop {
             // Clear expired errors before render
-            self.state.clear_error_if_expired();
+            if self.state.clear_error_if_expired() {
+                self.dirty = true;
+            }
 
             // Process pending deletions that have exceeded the grace period
-            self.process_pending_deletions().await;
+            if self.process_pending_deletions().await {
+                self.dirty = true;
+            }
 
-            // Render
-            terminal.draw(|f| crate::ui::render(f, &self.state))?;
+            // Render only when dirty (skip if nothing changed)
+            if self.dirty {
+                terminal.draw(|f| crate::ui::render(f, &self.state))?;
+                self.dirty = false;
+            }
 
             // Process any pending prefetch if debounce delay has passed
             self.process_pending_prefetch().await;
@@ -43,6 +50,7 @@ impl App {
             {
                 self.execute_search().await;
                 self.last_search_input = None;
+                self.dirty = true;
             }
 
             // Handle input (adaptive timeout: faster when loading or pending prefetch)
@@ -53,6 +61,8 @@ impl App {
             };
             if event::poll(Duration::from_millis(poll_timeout))? {
                 let evt = event::read()?;
+                // Any input event (including resize) requires re-render
+                self.dirty = true;
                 match handle_input(evt, &self.state, &self.bindings) {
                     InputResult::Quit => break,
                     InputResult::Action(action) => self.handle_action(action).await?,
@@ -63,25 +73,32 @@ impl App {
             }
 
             // Process IMAP events from the actor (non-blocking)
-            self.process_imap_events().await;
+            if self.process_imap_events().await {
+                self.dirty = true;
+            }
 
             // Process AI events from the actor (non-blocking)
-            self.process_ai_events();
+            if self.process_ai_events() {
+                self.dirty = true;
+            }
 
             // Load more emails if user is near the bottom of the list
             if self.state.needs_more_emails() {
                 self.load_more_emails().await;
+                self.dirty = true;
             }
         }
 
         Ok(())
     }
 
-    /// Process events from all IMAP actors
-    pub(crate) async fn process_imap_events(&mut self) {
+    /// Process events from all IMAP actors. Returns true if any events were processed.
+    pub(crate) async fn process_imap_events(&mut self) -> bool {
         let active_index = self.accounts.active_index();
+        let events = self.accounts.poll_events();
+        let had_events = !events.is_empty();
 
-        for account_event in self.accounts.poll_events() {
+        for account_event in events {
             let is_active = account_event.account_index == active_index;
             tracing::debug!(
                 "Received IMAP event from account {}: {:?}",
@@ -188,7 +205,7 @@ impl App {
                         // Update body for both Reader and Inbox preview
                         match &self.state.view {
                             View::Reader { uid: viewing_uid } if *viewing_uid == uid => {
-                                self.state.reader.body = Some(body);
+                                self.state.reader.set_body(Some(body));
                                 self.state.status.loading = false;
                                 self.state.clear_error();
                             }
@@ -197,7 +214,7 @@ impl App {
                                 if let Some(email) = self.state.current_email_from_thread()
                                     && email.uid == uid
                                 {
-                                    self.state.reader.body = Some(body);
+                                    self.state.reader.set_body(Some(body));
                                     self.state.status.loading = false;
                                 }
                             }
@@ -362,18 +379,22 @@ impl App {
 
         // Update other accounts info for status bar after processing events
         self.refresh_other_accounts_info();
+
+        had_events
     }
 
-    /// Process events from the AI actor (non-blocking)
-    pub(crate) fn process_ai_events(&mut self) {
+    /// Process events from the AI actor (non-blocking). Returns true if any events were processed.
+    pub(crate) fn process_ai_events(&mut self) -> bool {
         use crate::ai::AiEvent;
         use crate::app::state::PolishPreview;
 
         let Some(ref mut ai) = self.ai_actor else {
-            return;
+            return false;
         };
 
+        let mut had_events = false;
         while let Ok(event) = ai.event_rx.try_recv() {
+            had_events = true;
             match event {
                 AiEvent::EmailSummary { uid, summary } => {
                     self.state.reader.summary_loading = false;
@@ -403,6 +424,7 @@ impl App {
                 }
             }
         }
+        had_events
     }
 
     /// Get the folder-specific cache key for the current account and folder
@@ -495,7 +517,7 @@ impl App {
         if let Some(current) = self.state.current_email_from_thread()
             && self.last_prefetch_uid != Some(current.uid)
         {
-            self.state.reader.body = None;
+            self.state.reader.set_body(None);
             self.last_prefetch_uid = None;
             // Schedule prefetch for the new current email
             self.schedule_prefetch().await;
@@ -609,8 +631,9 @@ impl App {
         tracing::debug!("Scheduled folder prefetch for common folders");
     }
 
-    /// Process pending deletions that have exceeded the grace period
-    async fn process_pending_deletions(&mut self) {
+    /// Process pending deletions that have exceeded the grace period.
+    /// Returns true if any deletions were processed.
+    async fn process_pending_deletions(&mut self) -> bool {
         use crate::app::undo::UndoableAction;
 
         let now = Instant::now();
@@ -625,6 +648,8 @@ impl App {
                 true // Keep in pending
             }
         });
+
+        let had_deletions = !to_execute.is_empty();
 
         // Execute the deletions
         for (uid, account_id, folder) in to_execute {
@@ -644,5 +669,7 @@ impl App {
             }
             _ => true,
         });
+
+        had_deletions
     }
 }

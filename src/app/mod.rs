@@ -57,6 +57,8 @@ pub struct App {
     pub(crate) last_search_input: Option<Instant>,
     /// AI actor handle for summarization and polish (None if AI features disabled)
     pub(crate) ai_actor: Option<AiActorHandle>,
+    /// Dirty flag: when true, UI needs re-render. Skips renders when nothing changed.
+    pub(crate) dirty: bool,
 }
 
 impl App {
@@ -164,6 +166,7 @@ impl App {
             pending_deletions: Vec::new(),
             last_search_input: None,
             ai_actor,
+            dirty: true, // Start dirty for initial render
         };
 
         // Initialize other accounts info for status bar
@@ -286,7 +289,7 @@ impl App {
         self.reload_from_cache().await;
 
         // Now clear state that wasn't overwritten by reload
-        self.state.reader.body = None;
+        self.state.reader.set_body(None);
         self.state.thread.expanded.clear();
         self.state.thread.selected = 0;
         self.state.thread.selected_in_thread = 0;

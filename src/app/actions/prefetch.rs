@@ -39,11 +39,11 @@ impl App {
             .get_email_body(&email_cache_key, current_uid)
             .await
         {
-            self.state.reader.body = Some(body);
+            self.state.reader.set_body(Some(body));
             self.last_prefetch_uid = Some(current_uid);
         } else {
             // Only clear if not in cache - avoids flash of empty content
-            self.state.reader.body = None;
+            self.state.reader.set_body(None);
 
             // If current email is from a different folder (e.g., Sent in conversation mode),
             // fetch it directly since batch prefetch only handles current folder
@@ -57,19 +57,25 @@ impl App {
                 {
                     // Fetch this email's body directly
                     // Only mark as in-flight if send succeeds to avoid stuck UIDs
-                    if self
-                        .accounts
-                        .active()
-                        .imap_handle
-                        .cmd_tx
-                        .try_send(ImapCommand::FetchBody {
+                    match self.accounts.active().imap_handle.cmd_tx.try_send(
+                        ImapCommand::FetchBody {
                             uid: current_uid,
                             folder: email_folder,
-                        })
-                        .is_ok()
-                    {
-                        self.state.status.loading = true;
-                        self.in_flight_fetches.insert(current_uid);
+                        },
+                    ) {
+                        Ok(_) => {
+                            self.state.status.loading = true;
+                            self.in_flight_fetches.insert(current_uid);
+                        }
+                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                            tracing::warn!(
+                                "IMAP command queue full, skipping prefetch for uid {}",
+                                current_uid
+                            );
+                        }
+                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                            tracing::error!("IMAP actor disconnected");
+                        }
                     }
                 }
             }
@@ -155,7 +161,7 @@ impl App {
         {
             let email_cache_key = self.email_cache_key(email);
             if let Ok(Some(body)) = self.cache.get_email_body(&email_cache_key, email.uid).await {
-                self.state.reader.body = Some(body);
+                self.state.reader.set_body(Some(body));
                 self.last_prefetch_uid = Some(email.uid);
             }
         }
@@ -179,8 +185,8 @@ impl App {
             .collect();
 
         // Send single batch fetch command (more efficient than N individual requests)
-        if !uids_to_fetch.is_empty()
-            && self
+        if !uids_to_fetch.is_empty() {
+            match self
                 .accounts
                 .active()
                 .imap_handle
@@ -188,12 +194,22 @@ impl App {
                 .try_send(ImapCommand::FetchBodies {
                     uids: uids_to_fetch.clone(),
                     folder: current_folder.clone(),
-                })
-                .is_ok()
-        {
-            // Track all UIDs as in-flight
-            for uid in uids_to_fetch {
-                self.in_flight_fetches.insert(uid);
+                }) {
+                Ok(_) => {
+                    // Track all UIDs as in-flight
+                    for uid in uids_to_fetch {
+                        self.in_flight_fetches.insert(uid);
+                    }
+                }
+                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                    tracing::warn!(
+                        "IMAP command queue full, skipping batch prefetch for {} uids",
+                        uids_to_fetch.len()
+                    );
+                }
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                    tracing::error!("IMAP actor disconnected");
+                }
             }
         }
 
