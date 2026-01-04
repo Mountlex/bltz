@@ -143,6 +143,7 @@ impl Cache {
     //
 
     /// Clear all emails for an account.
+    #[allow(dead_code)]
     pub async fn clear_emails(&self, account_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM emails WHERE account_id = ?")
             .bind(account_id)
@@ -203,6 +204,7 @@ impl Cache {
         email::get_emails_before_cursor(&self.pool, account_id, cursor, limit).await
     }
 
+    #[allow(dead_code)]
     pub async fn get_email(&self, account_id: &str, uid: u32) -> Result<Option<EmailHeader>> {
         email::get_email(&self.pool, account_id, uid).await
     }
@@ -211,12 +213,37 @@ impl Cache {
         email::update_flags(&self.pool, account_id, uid, flags).await
     }
 
+    /// Atomically add a flag (avoids read-modify-write race).
+    pub async fn add_flag(
+        &self,
+        account_id: &str,
+        uid: u32,
+        flag: EmailFlags,
+    ) -> Result<EmailFlags> {
+        email::add_flag(&self.pool, account_id, uid, flag).await
+    }
+
+    /// Atomically remove a flag (avoids read-modify-write race).
+    pub async fn remove_flag(
+        &self,
+        account_id: &str,
+        uid: u32,
+        flag: EmailFlags,
+    ) -> Result<EmailFlags> {
+        email::remove_flag(&self.pool, account_id, uid, flag).await
+    }
+
     pub async fn get_all_uid_flags(&self, account_id: &str) -> Result<Vec<(u32, EmailFlags)>> {
         email::get_all_uid_flags(&self.pool, account_id).await
     }
 
     pub async fn delete_email(&self, account_id: &str, uid: u32) -> Result<()> {
         email::delete_email(&self.pool, account_id, uid).await
+    }
+
+    /// Delete emails that are NOT in the given UID list (safer than clear_emails for full sync).
+    pub async fn delete_emails_not_in(&self, account_id: &str, keep_uids: &[u32]) -> Result<usize> {
+        email::delete_emails_not_in(&self.pool, account_id, keep_uids).await
     }
 
     pub async fn get_email_count(&self, account_id: &str) -> Result<usize> {

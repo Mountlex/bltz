@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use crate::app::App;
 use crate::app::state::View;
 use crate::mail::ImapCommand;
-use crate::mail::imap::folder_cache_key;
 use crate::mail::parser::parse_attachments;
 
 impl App {
@@ -39,7 +38,7 @@ impl App {
 
     /// Load attachments for an email
     async fn load_attachments(&mut self, uid: u32) {
-        let cache_key = folder_cache_key(self.account_id(), &self.state.folder.current);
+        let cache_key = self.cache_key_for_uid(uid);
 
         // First try to load from cache
         if let Ok(attachments) = self.cache.get_attachments(&cache_key, uid).await
@@ -68,10 +67,11 @@ impl App {
         self.state.status.loading = true;
 
         // Request the first attachment to trigger raw message fetch
+        let folder = self.folder_for_uid(uid);
         self.accounts
             .send_command(ImapCommand::FetchAttachment {
                 uid,
-                folder: self.state.folder.current.clone(),
+                folder,
                 attachment_index: 0,
             })
             .await
@@ -110,10 +110,11 @@ impl App {
         self.state.status.loading = true;
 
         // Request attachment data
+        let folder = self.folder_for_uid(uid);
         self.accounts
             .send_command(ImapCommand::FetchAttachment {
                 uid,
-                folder: self.state.folder.current.clone(),
+                folder,
                 attachment_index: selected,
             })
             .await
@@ -151,10 +152,11 @@ impl App {
         self.state.status.loading = true;
 
         // Request attachment data
+        let folder = self.folder_for_uid(uid);
         self.accounts
             .send_command(ImapCommand::FetchAttachment {
                 uid,
-                folder: self.state.folder.current.clone(),
+                folder,
                 attachment_index: selected,
             })
             .await
@@ -220,7 +222,7 @@ impl App {
             matches!(self.state.view, View::Reader { uid: current_uid } if current_uid == uid);
         if uid_matches && self.state.reader.attachments.is_empty() {
             // Try to reload from cache now that raw message should be cached
-            let cache_key = folder_cache_key(self.account_id(), &self.state.folder.current);
+            let cache_key = self.cache_key_for_uid(uid);
             if let Ok(Some(raw)) =
                 futures::executor::block_on(self.cache.get_raw_message(&cache_key, uid))
             {

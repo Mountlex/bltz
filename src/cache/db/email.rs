@@ -198,6 +198,7 @@ pub async fn get_emails_before_cursor(
 }
 
 /// Get a single email by UID.
+#[allow(dead_code)]
 pub async fn get_email(
     pool: &SqlitePool,
     account_id: &str,
@@ -234,6 +235,60 @@ pub async fn update_flags(
     Ok(())
 }
 
+/// Atomically add a flag using SQL bitwise OR (avoids read-modify-write race).
+/// Returns the new flags value.
+pub async fn add_flag(
+    pool: &SqlitePool,
+    account_id: &str,
+    uid: u32,
+    flag: EmailFlags,
+) -> Result<EmailFlags> {
+    // Use bitwise OR to add flag atomically
+    sqlx::query("UPDATE emails SET flags = flags | ? WHERE account_id = ? AND uid = ?")
+        .bind(flag.bits() as i64)
+        .bind(account_id)
+        .bind(uid as i64)
+        .execute(pool)
+        .await?;
+
+    // Fetch the new flags value
+    let row: Option<i64> =
+        sqlx::query_scalar("SELECT flags FROM emails WHERE account_id = ? AND uid = ?")
+            .bind(account_id)
+            .bind(uid as i64)
+            .fetch_optional(pool)
+            .await?;
+
+    Ok(EmailFlags::from_bits_truncate(row.unwrap_or(0) as u32))
+}
+
+/// Atomically remove a flag using SQL bitwise AND NOT (avoids read-modify-write race).
+/// Returns the new flags value.
+pub async fn remove_flag(
+    pool: &SqlitePool,
+    account_id: &str,
+    uid: u32,
+    flag: EmailFlags,
+) -> Result<EmailFlags> {
+    // Use bitwise AND with NOT to remove flag atomically
+    sqlx::query("UPDATE emails SET flags = flags & ~? WHERE account_id = ? AND uid = ?")
+        .bind(flag.bits() as i64)
+        .bind(account_id)
+        .bind(uid as i64)
+        .execute(pool)
+        .await?;
+
+    // Fetch the new flags value
+    let row: Option<i64> =
+        sqlx::query_scalar("SELECT flags FROM emails WHERE account_id = ? AND uid = ?")
+            .bind(account_id)
+            .bind(uid as i64)
+            .fetch_optional(pool)
+            .await?;
+
+    Ok(EmailFlags::from_bits_truncate(row.unwrap_or(0) as u32))
+}
+
 /// Get all UIDs and their flags from cache (for flag sync).
 pub async fn get_all_uid_flags(
     pool: &SqlitePool,
@@ -265,6 +320,38 @@ pub async fn delete_email(pool: &SqlitePool, account_id: &str, uid: u32) -> Resu
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Delete all emails for an account that are NOT in the given UID list.
+/// This is safer than clear_emails() as it preserves emails that should remain.
+pub async fn delete_emails_not_in(
+    pool: &SqlitePool,
+    account_id: &str,
+    keep_uids: &[u32],
+) -> Result<usize> {
+    if keep_uids.is_empty() {
+        // If no UIDs to keep, delete all emails for this account
+        let result = sqlx::query("DELETE FROM emails WHERE account_id = ?")
+            .bind(account_id)
+            .execute(pool)
+            .await?;
+        return Ok(result.rows_affected() as usize);
+    }
+
+    // Build placeholder string for UIDs
+    let placeholders: Vec<&str> = keep_uids.iter().map(|_| "?").collect();
+    let query = format!(
+        "DELETE FROM emails WHERE account_id = ? AND uid NOT IN ({})",
+        placeholders.join(",")
+    );
+
+    let mut query_builder = sqlx::query(&query).bind(account_id);
+    for uid in keep_uids {
+        query_builder = query_builder.bind(*uid as i64);
+    }
+
+    let result = query_builder.execute(pool).await?;
+    Ok(result.rows_affected() as usize)
 }
 
 /// Get total email count for an account.

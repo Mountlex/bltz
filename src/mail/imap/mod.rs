@@ -54,13 +54,16 @@ pub enum ImapCommand {
     SetFlag {
         uid: u32,
         flag: EmailFlags,
+        folder: String,
     },
     RemoveFlag {
         uid: u32,
         flag: EmailFlags,
+        folder: String,
     },
     Delete {
         uid: u32,
+        folder: String,
     },
     SelectFolder {
         folder: String,

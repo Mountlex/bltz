@@ -37,6 +37,10 @@ impl App {
         if let Some(email) = email {
             let uid = email.uid;
             let cache_key = self.email_cache_key(&email);
+            let folder = email
+                .folder
+                .clone()
+                .unwrap_or_else(|| self.state.folder.current.clone());
 
             // Mark as read
             if !email.is_seen() {
@@ -44,6 +48,7 @@ impl App {
                     .send_command(ImapCommand::SetFlag {
                         uid,
                         flag: EmailFlags::SEEN,
+                        folder: folder.clone(),
                     })
                     .await
                     .ok();
@@ -260,6 +265,12 @@ impl App {
                 // Invalidate search cache since threads changed
                 self.state.invalidate_search_cache();
 
+                // Clear stale state if it references deleted email
+                if self.last_prefetch_uid == Some(uid) {
+                    self.last_prefetch_uid = None;
+                    self.state.reader.body = None;
+                }
+
                 // Adjust selection if out of bounds
                 let visible_count = self.state.visible_threads().len();
                 if visible_count == 0 {
@@ -302,13 +313,19 @@ impl App {
         };
 
         if let Some(uid) = uid {
-            let is_seen = self
+            let email_info = self
                 .state
                 .emails
                 .iter()
                 .find(|e| e.uid == uid)
-                .map(|e| e.is_seen())
-                .unwrap_or(false);
+                .map(|e| (e.is_seen(), e.folder.clone()));
+
+            let (is_seen, email_folder) = match email_info {
+                Some((seen, folder)) => (seen, folder),
+                None => return,
+            };
+
+            let folder = email_folder.unwrap_or_else(|| self.state.folder.current.clone());
 
             // Push undo entry BEFORE making changes
             self.undo_stack.push(UndoEntry {
@@ -317,7 +334,7 @@ impl App {
                     was_seen: is_seen,
                 },
                 account_id: self.account_id().to_string(),
-                folder: self.state.folder.current.clone(),
+                folder: folder.clone(),
             });
 
             // OPTIMISTIC UPDATE: Apply flag change immediately to UI state
@@ -368,6 +385,7 @@ impl App {
                     .send_command(ImapCommand::RemoveFlag {
                         uid,
                         flag: EmailFlags::SEEN,
+                        folder,
                     })
                     .await
                     .ok();
@@ -376,6 +394,7 @@ impl App {
                     .send_command(ImapCommand::SetFlag {
                         uid,
                         flag: EmailFlags::SEEN,
+                        folder,
                     })
                     .await
                     .ok();
@@ -391,13 +410,19 @@ impl App {
         };
 
         if let Some(uid) = uid {
-            let is_flagged = self
+            let email_info = self
                 .state
                 .emails
                 .iter()
                 .find(|e| e.uid == uid)
-                .map(|e| e.is_flagged())
-                .unwrap_or(false);
+                .map(|e| (e.is_flagged(), e.folder.clone()));
+
+            let (is_flagged, email_folder) = match email_info {
+                Some((flagged, folder)) => (flagged, folder),
+                None => return,
+            };
+
+            let folder = email_folder.unwrap_or_else(|| self.state.folder.current.clone());
 
             // Push undo entry BEFORE making changes
             self.undo_stack.push(UndoEntry {
@@ -406,7 +431,7 @@ impl App {
                     was_flagged: is_flagged,
                 },
                 account_id: self.account_id().to_string(),
-                folder: self.state.folder.current.clone(),
+                folder: folder.clone(),
             });
 
             // OPTIMISTIC UPDATE: Apply flag change immediately to UI state
@@ -432,6 +457,7 @@ impl App {
                     .send_command(ImapCommand::RemoveFlag {
                         uid,
                         flag: EmailFlags::FLAGGED,
+                        folder,
                     })
                     .await
                     .ok();
@@ -440,6 +466,7 @@ impl App {
                     .send_command(ImapCommand::SetFlag {
                         uid,
                         flag: EmailFlags::FLAGGED,
+                        folder,
                     })
                     .await
                     .ok();

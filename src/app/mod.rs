@@ -215,7 +215,10 @@ impl App {
             // Only delete if we're still on the same account
             if pd.account_id == current_account {
                 self.accounts
-                    .send_command(ImapCommand::Delete { uid: pd.uid })
+                    .send_command(ImapCommand::Delete {
+                        uid: pd.uid,
+                        folder: pd.folder,
+                    })
                     .await
                     .ok();
             }

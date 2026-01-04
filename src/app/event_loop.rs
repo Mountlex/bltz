@@ -419,6 +419,31 @@ impl App {
         folder_cache_key(self.account_id(), folder)
     }
 
+    /// Get cache key for an email by UID, using the email's actual folder.
+    /// Falls back to current folder if email not found or has no folder.
+    /// Use this when you only have a UID and need the correct cache key for conversation mode.
+    pub(crate) fn cache_key_for_uid(&self, uid: u32) -> String {
+        let folder = self
+            .state
+            .emails
+            .iter()
+            .find(|e| e.uid == uid)
+            .and_then(|e| e.folder.clone())
+            .unwrap_or_else(|| self.state.folder.current.clone());
+        folder_cache_key(self.account_id(), &folder)
+    }
+
+    /// Get the folder for an email by UID.
+    /// Falls back to current folder if email not found or has no folder.
+    pub(crate) fn folder_for_uid(&self, uid: u32) -> String {
+        self.state
+            .emails
+            .iter()
+            .find(|e| e.uid == uid)
+            .and_then(|e| e.folder.clone())
+            .unwrap_or_else(|| self.state.folder.current.clone())
+    }
+
     /// Reload state from cache (resets to first page using keyset pagination)
     pub(crate) async fn reload_from_cache(&mut self) {
         let cache_key = self.cache_key();
@@ -464,6 +489,17 @@ impl App {
         }
         // Clamp selection to visible threads (respects search/starred filter)
         self.state.clamp_selection_to_visible();
+
+        // Clear stale body if current email changed (e.g., after sent emails merged)
+        // and schedule prefetch for the new current email
+        if let Some(current) = self.state.current_email_from_thread()
+            && self.last_prefetch_uid != Some(current.uid)
+        {
+            self.state.reader.body = None;
+            self.last_prefetch_uid = None;
+            // Schedule prefetch for the new current email
+            self.schedule_prefetch().await;
+        }
 
         // Clean up expanded threads that no longer exist
         let thread_ids: std::collections::HashSet<_> = self
@@ -592,10 +628,10 @@ impl App {
 
         // Execute the deletions
         for (uid, account_id, folder) in to_execute {
-            // Only delete if still on correct account/folder
-            if account_id == self.account_id() && folder == self.state.folder.current {
+            // Only delete if still on correct account
+            if account_id == self.account_id() {
                 self.accounts
-                    .send_command(ImapCommand::Delete { uid })
+                    .send_command(ImapCommand::Delete { uid, folder })
                     .await
                     .ok();
             }

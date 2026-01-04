@@ -228,11 +228,13 @@ impl App {
                         original.flags.insert(EmailFlags::ANSWERED);
                     }
 
-                    // Send IMAP command to server
+                    // Send IMAP command to server (use email's actual folder)
+                    let folder = self.folder_for_uid(reply_to_uid);
                     self.accounts
                         .send_command(ImapCommand::SetFlag {
                             uid: reply_to_uid,
                             flag: EmailFlags::ANSWERED,
+                            folder,
                         })
                         .await
                         .ok();

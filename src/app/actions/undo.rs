@@ -75,16 +75,19 @@ impl App {
             self.state.unread_count += 1;
         }
 
-        // Send IMAP command to sync server
+        // Send IMAP command to sync server (use email's actual folder)
+        let folder = self.folder_for_uid(uid);
         let cmd = if was_seen {
             ImapCommand::SetFlag {
                 uid,
                 flag: EmailFlags::SEEN,
+                folder,
             }
         } else {
             ImapCommand::RemoveFlag {
                 uid,
                 flag: EmailFlags::SEEN,
+                folder,
             }
         };
         self.accounts.send_command(cmd).await.ok();
@@ -103,16 +106,19 @@ impl App {
             }
         }
 
-        // Send IMAP command to sync server
+        // Send IMAP command to sync server (use email's actual folder)
+        let folder = self.folder_for_uid(uid);
         let cmd = if was_flagged {
             ImapCommand::SetFlag {
                 uid,
                 flag: EmailFlags::FLAGGED,
+                folder,
             }
         } else {
             ImapCommand::RemoveFlag {
                 uid,
                 flag: EmailFlags::FLAGGED,
+                folder,
             }
         };
         self.accounts.send_command(cmd).await.ok();

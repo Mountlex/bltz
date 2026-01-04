@@ -168,6 +168,28 @@ impl ImapClient {
         self.fetch_headers(&format!("{}:*", start_uid)).await
     }
 
+    /// Fetch all UIDs from the current folder (lightweight, for deletion detection).
+    pub(crate) async fn fetch_all_uids(&mut self) -> Result<Vec<u32>> {
+        self.ensure_connected().await?;
+
+        let session = self.session()?;
+        let mut messages = session
+            .uid_fetch("1:*", "UID")
+            .await
+            .context("Failed to fetch UIDs")?;
+
+        let mut uids = Vec::new();
+        while let Some(result) = messages.next().await {
+            if let Ok(fetch) = result
+                && let Some(uid) = fetch.uid
+            {
+                uids.push(uid);
+            }
+        }
+
+        Ok(uids)
+    }
+
     async fn fetch_headers(&mut self, sequence: &str) -> Result<Vec<EmailHeader>> {
         let session = self.session()?;
 
@@ -278,6 +300,28 @@ impl ImapClient {
     //
     // Flag Operations
     //
+
+    /// Fetch current flags for a single email from the server.
+    pub async fn fetch_flags(&mut self, uid: u32) -> Result<EmailFlags> {
+        self.ensure_connected().await?;
+
+        let session = self.session()?;
+        let mut messages = session
+            .uid_fetch(uid.to_string(), "FLAGS")
+            .await
+            .context("Failed to fetch flags")?;
+
+        while let Some(result) = messages.next().await {
+            if let Ok(fetch) = result {
+                let flag_vec: Vec<async_imap::types::Flag> = fetch.flags().collect();
+                return Ok(parse_flags_from_imap(&flag_vec));
+            }
+        }
+
+        // If we couldn't fetch flags, return empty rather than error
+        // This allows the caller to decide how to handle the case
+        Ok(EmailFlags::empty())
+    }
 
     pub async fn add_flag(&mut self, uid: u32, flag: EmailFlags) -> Result<()> {
         self.ensure_connected().await?;

@@ -247,9 +247,6 @@ async fn handle_command(
     cmd: ImapCommand,
     event_tx: &mpsc::Sender<ImapEvent>,
 ) {
-    // Use folder-specific cache key for operations
-    let cache_key = folder_cache_key(account_id, current_folder);
-
     match cmd {
         ImapCommand::Sync => {
             do_sync_folder(client, cache, account_id, current_folder, event_tx).await;
@@ -393,24 +390,31 @@ async fn handle_command(
                 tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
             }
         }
-        ImapCommand::SetFlag { uid, flag } => {
+        ImapCommand::SetFlag { uid, flag, folder } => {
+            // Use folder-specific cache key (important for conversation mode)
+            let flag_cache_key = folder_cache_key(account_id, &folder);
+
+            // Switch to correct folder if needed
+            let needs_folder_switch = folder != *current_folder;
+            if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
+                tracing::warn!("Failed to select folder '{}' for flag: {}", folder, e);
+            }
+
             match client.add_flag(uid, flag).await {
                 Ok(_) => {
-                    // Get current flags from cache and add the new one
-                    // Always send FlagUpdated event to keep UI in sync even if cache fails
-                    let new_flags = match cache.get_email(&cache_key, uid).await {
-                        Ok(Some(email)) => email.flags | flag,
-                        _ => {
+                    // Use atomic cache operation to add flag (avoids read-modify-write race)
+                    let new_flags = match cache.add_flag(&flag_cache_key, uid, flag).await {
+                        Ok(flags) => flags,
+                        Err(e) => {
                             tracing::warn!(
-                                "Cache lookup failed for UID {}, using flag as fallback",
-                                uid
+                                "Cache add_flag failed for UID {}: {}, fetching from server",
+                                uid,
+                                e
                             );
-                            flag // Fallback: just the flag that was set
+                            // Fallback: fetch current flags from server
+                            client.fetch_flags(uid).await.unwrap_or(flag)
                         }
                     };
-                    if let Err(e) = cache.update_flags(&cache_key, uid, new_flags).await {
-                        tracing::warn!("Failed to update cache flags for UID {}: {}", uid, e);
-                    }
                     if let Err(e) = event_tx
                         .send(ImapEvent::FlagUpdated {
                             uid,
@@ -430,25 +434,37 @@ async fn handle_command(
                     }
                 }
             }
+
+            // Switch back to original folder for IDLE
+            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
+                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
+            }
         }
-        ImapCommand::RemoveFlag { uid, flag } => {
+        ImapCommand::RemoveFlag { uid, flag, folder } => {
+            // Use folder-specific cache key (important for conversation mode)
+            let flag_cache_key = folder_cache_key(account_id, &folder);
+
+            // Switch to correct folder if needed
+            let needs_folder_switch = folder != *current_folder;
+            if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
+                tracing::warn!("Failed to select folder '{}' for flag: {}", folder, e);
+            }
+
             match client.remove_flag(uid, flag).await {
                 Ok(_) => {
-                    // Get current flags from cache and remove the flag
-                    // Always send FlagUpdated event to keep UI in sync even if cache fails
-                    let new_flags = match cache.get_email(&cache_key, uid).await {
-                        Ok(Some(email)) => email.flags & !flag,
-                        _ => {
+                    // Use atomic cache operation to remove flag (avoids read-modify-write race)
+                    let new_flags = match cache.remove_flag(&flag_cache_key, uid, flag).await {
+                        Ok(flags) => flags,
+                        Err(e) => {
                             tracing::warn!(
-                                "Cache lookup failed for UID {}, using empty flags as fallback",
-                                uid
+                                "Cache remove_flag failed for UID {}: {}, fetching from server",
+                                uid,
+                                e
                             );
-                            EmailFlags::empty() // Fallback: empty flags
+                            // Fallback: fetch current flags from server
+                            client.fetch_flags(uid).await.unwrap_or(EmailFlags::empty())
                         }
                     };
-                    if let Err(e) = cache.update_flags(&cache_key, uid, new_flags).await {
-                        tracing::warn!("Failed to update cache flags for UID {}: {}", uid, e);
-                    }
                     if let Err(e) = event_tx
                         .send(ImapEvent::FlagUpdated {
                             uid,
@@ -468,25 +484,46 @@ async fn handle_command(
                     }
                 }
             }
+
+            // Switch back to original folder for IDLE
+            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
+                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
+            }
         }
-        ImapCommand::Delete { uid } => match client.delete(uid).await {
-            Ok(_) => {
-                if let Err(e) = cache.delete_email(&cache_key, uid).await {
-                    tracing::warn!("Failed to delete email from cache: {}", e);
+        ImapCommand::Delete { uid, folder } => {
+            // Use folder-specific cache key (important for conversation mode)
+            let delete_cache_key = folder_cache_key(account_id, &folder);
+
+            // Switch to correct folder if needed
+            let needs_folder_switch = folder != *current_folder;
+            if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
+                tracing::warn!("Failed to select folder '{}' for delete: {}", folder, e);
+            }
+
+            match client.delete(uid).await {
+                Ok(_) => {
+                    if let Err(e) = cache.delete_email(&delete_cache_key, uid).await {
+                        tracing::warn!("Failed to delete email from cache: {}", e);
+                    }
+                    if let Err(e) = event_tx.send(ImapEvent::Deleted { uid }).await {
+                        tracing::error!("Failed to send Deleted event: {}", e);
+                    }
                 }
-                if let Err(e) = event_tx.send(ImapEvent::Deleted { uid }).await {
-                    tracing::error!("Failed to send Deleted event: {}", e);
+                Err(e) => {
+                    if let Err(send_err) = event_tx
+                        .send(ImapEvent::Error(format!("Failed to delete: {}", e)))
+                        .await
+                    {
+                        tracing::error!("Failed to send error event: {}", send_err);
+                    }
                 }
             }
-            Err(e) => {
-                if let Err(send_err) = event_tx
-                    .send(ImapEvent::Error(format!("Failed to delete: {}", e)))
-                    .await
-                {
-                    tracing::error!("Failed to send error event: {}", send_err);
-                }
+
+            // Switch back to original folder for IDLE
+            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
+                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
             }
-        },
+        }
         ImapCommand::SelectFolder { folder } => {
             match client.select_folder(&folder).await {
                 Ok(_) => {
@@ -774,14 +811,42 @@ impl ImapClient {
                 "Performing full sync for folder '{}' (UID validity changed or first sync)",
                 folder
             );
-            // Fetch first, then clear - so we don't lose data on fetch failure
+            // Fetch all headers from server
             let emails = self.fetch_all_headers().await?;
             tracing::info!("Fetched {} emails from folder '{}'", emails.len(), folder);
-            cache.clear_emails(&cache_key).await?;
+
+            // Insert/update emails first (uses INSERT OR REPLACE, safe if crash occurs here)
+            if !emails.is_empty() {
+                cache.insert_emails(&cache_key, &emails).await?;
+            }
+
+            // Then delete emails that are no longer on the server
+            // This is safer than clear_emails() as it preserves data if crash occurs
+            let server_uids: Vec<u32> = emails.iter().map(|e| e.uid).collect();
+            let deleted = cache.delete_emails_not_in(&cache_key, &server_uids).await?;
+            if deleted > 0 {
+                tracing::info!(
+                    "Removed {} stale emails from cache for folder '{}'",
+                    deleted,
+                    folder
+                );
+            }
+
             emails
         } else {
             // Sync flags for existing emails first
             self.sync_flags(cache, &cache_key).await?;
+
+            // Detect server-side deletions by comparing server UIDs with cached UIDs
+            let server_uids = self.fetch_all_uids().await?;
+            let deleted = cache.delete_emails_not_in(&cache_key, &server_uids).await?;
+            if deleted > 0 {
+                tracing::info!(
+                    "Removed {} server-deleted emails from cache for folder '{}'",
+                    deleted,
+                    folder
+                );
+            }
 
             // Then fetch any new emails
             if let Some(start_uid) = local_state.new_messages_start(server_uid_next) {
@@ -803,9 +868,10 @@ impl ImapClient {
         };
 
         // Store new emails in cache with folder-specific key
-        if !new_emails.is_empty() {
+        // Skip for full sync since emails were already inserted above
+        if !needs_full_sync && !new_emails.is_empty() {
             tracing::debug!(
-                "Inserting {} emails into cache for folder '{}'",
+                "Inserting {} new emails into cache for folder '{}'",
                 new_emails.len(),
                 folder
             );

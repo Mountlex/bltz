@@ -56,9 +56,9 @@ impl App {
                     && !self.in_flight_fetches.contains(&current_uid)
                 {
                     // Fetch this email's body directly
-                    self.state.status.loading = true;
-                    self.in_flight_fetches.insert(current_uid);
-                    self.accounts
+                    // Only mark as in-flight if send succeeds to avoid stuck UIDs
+                    if self
+                        .accounts
                         .active()
                         .imap_handle
                         .cmd_tx
@@ -66,7 +66,11 @@ impl App {
                             uid: current_uid,
                             folder: email_folder,
                         })
-                        .ok();
+                        .is_ok()
+                    {
+                        self.state.status.loading = true;
+                        self.in_flight_fetches.insert(current_uid);
+                    }
                 }
             }
         }
@@ -96,12 +100,26 @@ impl App {
             .collect();
 
         if uids_to_fetch.is_empty() {
-            self.pending_prefetch = None;
+            // Don't clear pending_prefetch if there are already pending UIDs
+            // (preserves previous navigation's prefetch requests)
             return;
         }
 
-        // Schedule prefetch with debounce - will be sent after delay
-        self.pending_prefetch = Some((uids_to_fetch, Instant::now()));
+        // Merge with existing pending prefetch to avoid losing UIDs during rapid navigation
+        let (merged_uids, timestamp) = match self.pending_prefetch.take() {
+            Some((mut existing_uids, ts)) => {
+                // Add new UIDs, avoiding duplicates
+                for uid in uids_to_fetch {
+                    if !existing_uids.contains(&uid) {
+                        existing_uids.push(uid);
+                    }
+                }
+                (existing_uids, ts) // Keep original timestamp for debounce
+            }
+            None => (uids_to_fetch, Instant::now()),
+        };
+
+        self.pending_prefetch = Some((merged_uids, timestamp));
     }
 
     /// Process any pending prefetch if debounce delay has passed
