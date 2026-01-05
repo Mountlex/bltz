@@ -73,6 +73,7 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
         other_accounts: &state.connection.other_accounts,
         starred_view: state.is_starred_view(),
         conversation_mode: state.conversation_mode,
+        has_error: state.has_unacknowledged_error(),
     };
     enhanced_status_bar(frame, chunks[0], &status_info);
 
@@ -300,12 +301,32 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
     // Sanitize: remove ANSI sequences and control characters
     let sanitized = sanitize_text(&body_text);
 
-    // Build styled text with dimmed quoted lines
+    // Build styled text with visual quote bars for quoted lines
+    // Alternating colors for nested quotes: cyan, yellow, magenta, green
+    let quote_colors = [
+        Theme::text_accent(),      // Cyan - level 1
+        Theme::star_indicator(),   // Yellow - level 2
+        Theme::unread_indicator(), // Magenta - level 3
+        Theme::text_success(),     // Green - level 4
+    ];
+
     let lines: Vec<Line> = sanitized
         .lines()
         .map(|line| {
-            if line.trim_start().starts_with('>') {
-                Line::styled(line, Theme::text_muted())
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('>') {
+                // Count quote depth (number of leading > characters)
+                let depth = trimmed.chars().take_while(|&c| c == '>').count().min(4);
+                // Build quote bar spans with alternating colors
+                let mut spans: Vec<Span> = Vec::with_capacity(depth + 1);
+                for i in 0..depth {
+                    let color_idx = i % quote_colors.len();
+                    spans.push(Span::styled("│ ", quote_colors[color_idx]));
+                }
+                // Strip leading > characters and spaces
+                let content = trimmed.trim_start_matches('>').trim_start();
+                spans.push(Span::styled(content, Theme::text_muted()));
+                Line::from(spans)
             } else {
                 Line::raw(line)
             }

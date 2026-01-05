@@ -245,17 +245,26 @@ pub struct StatusState {
     pub error: Option<String>,
     pub error_time: Option<std::time::Instant>,
     pub message: String,
+    /// Persists after error bar expires - shown as indicator in status bar
+    pub has_unacknowledged_error: bool,
 }
 
 impl StatusState {
     pub fn set_error(&mut self, error: impl ToString) {
         self.error = Some(error.to_string());
         self.error_time = Some(std::time::Instant::now());
+        self.has_unacknowledged_error = true;
     }
 
     pub fn clear_error(&mut self) {
         self.error = None;
         self.error_time = None;
+    }
+
+    /// Acknowledge the error indicator (clear the persistent flag)
+    /// Call this on user input to dismiss the status bar indicator
+    pub fn acknowledge_error(&mut self) {
+        self.has_unacknowledged_error = false;
     }
 
     /// Clear error if it's been visible for more than the TTL
@@ -646,6 +655,14 @@ impl AppState {
 
     pub fn clear_error_if_expired(&mut self) -> bool {
         self.status.clear_error_if_expired()
+    }
+
+    pub fn acknowledge_error(&mut self) {
+        self.status.acknowledge_error();
+    }
+
+    pub fn has_unacknowledged_error(&self) -> bool {
+        self.status.has_unacknowledged_error
     }
 
     pub fn set_status(&mut self, msg: impl ToString) {

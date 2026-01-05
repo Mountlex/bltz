@@ -9,21 +9,19 @@ use ratatui::{
 };
 
 use crate::app::state::AppState;
-use crate::command::{CommandHelp, CommandResult};
+use crate::command::{CommandHelp, CommandResult, PendingCommand};
 use crate::input::KeybindingEntry;
 
-use super::super::theme::{Theme, symbols};
+use super::super::theme::{Theme, colors, symbols};
 
 pub fn render_command_bar(frame: &mut Frame, area: Rect, state: &AppState) {
-    // Show confirmation prompt, result, or input
+    // Confirmation is now shown in modal, so skip command bar rendering for confirmations
     if state.modal.pending_confirmation().is_some() {
-        // Confirmation mode - show the prompt from command_result
-        if let Some(CommandResult::Success(msg)) = state.modal.command_result() {
-            let input = state.modal.command_input().unwrap_or("");
-            let text = format!(" :{} {} ", input, msg);
-            let paragraph = Paragraph::new(text).style(Theme::status_bar());
-            frame.render_widget(paragraph, area);
-        }
+        // Just show the command that was entered
+        let input = state.modal.command_input().unwrap_or("");
+        let text = format!(" :{} ", input);
+        let paragraph = Paragraph::new(text).style(Theme::status_bar());
+        frame.render_widget(paragraph, area);
         return;
     }
 
@@ -49,6 +47,55 @@ pub fn render_command_bar(frame: &mut Frame, area: Rect, state: &AppState) {
     let text = format!(" :{}{} ", input, cursor);
     let paragraph = Paragraph::new(text).style(style);
     frame.render_widget(paragraph, area);
+}
+
+/// Render a confirmation modal for destructive actions
+pub fn render_confirm_modal(frame: &mut Frame, area: Rect, pending: &PendingCommand) {
+    // Get confirmation message based on pending command
+    let (title, message, warning) = match pending {
+        PendingCommand::Clear => (
+            " Confirm Action ",
+            "Clear all cached emails?",
+            "This will remove locally cached emails. They will be re-synced from the server.",
+        ),
+    };
+
+    // Calculate popup size
+    let popup_width = 50.min(area.width.saturating_sub(4)).max(30);
+    let popup_height = 9.min(area.height.saturating_sub(4)).max(7);
+
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the area behind the popup
+    frame.render_widget(Clear, popup_area);
+
+    // Create the popup block with warning border
+    let block = Block::default()
+        .title(title)
+        .title_bottom(" y confirm │ n/Esc cancel ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(colors::fg_warning()));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    // Build content
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            message,
+            Theme::text().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(warning, Theme::text_muted())),
+        Line::from(""),
+    ];
+
+    let paragraph = Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center);
+    frame.render_widget(paragraph, inner);
 }
 
 /// Render a folder picker overlay

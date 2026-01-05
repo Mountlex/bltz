@@ -3,36 +3,131 @@
 //! This module provides a single source of truth for all colors and styles
 //! used throughout the application.
 
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
+use std::sync::OnceLock;
 
-/// Color palette - all colors defined in one place
+use crate::config::ThemeVariant;
+
+/// Global theme variant storage
+static THEME_VARIANT: OnceLock<ThemeVariant> = OnceLock::new();
+
+/// Initialize the theme variant (call once at startup)
+pub fn init_theme(variant: ThemeVariant) {
+    THEME_VARIANT.set(variant).ok();
+}
+
+/// Get the current theme variant
+fn current_theme() -> ThemeVariant {
+    THEME_VARIANT.get().copied().unwrap_or_default()
+}
+
+/// Color palette - colors that vary by theme
 pub mod colors {
-    use ratatui::style::Color;
+    use super::*;
 
     // Selection
-    pub const BG_SELECTION: Color = Color::Blue;
+    pub fn bg_selection() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::Blue,
+            ThemeVariant::HighContrast => Color::LightBlue,
+        }
+    }
 
     // Status bars
-    pub const BG_STATUS: Color = Color::DarkGray;
-    pub const BG_ERROR: Color = Color::Red;
+    pub fn bg_status() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::DarkGray,
+            ThemeVariant::HighContrast => Color::Black,
+        }
+    }
+
+    pub fn bg_error() -> Color {
+        Color::Red
+    }
 
     // Text colors
-    pub const FG_PRIMARY: Color = Color::White;
-    pub const FG_SECONDARY: Color = Color::Gray;
-    pub const FG_MUTED: Color = Color::DarkGray;
-    pub const FG_ACCENT: Color = Color::Cyan;
-    pub const FG_WARNING: Color = Color::Yellow;
+    pub fn fg_primary() -> Color {
+        Color::White
+    }
+
+    pub fn fg_secondary() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::Gray,
+            ThemeVariant::HighContrast => Color::White,
+        }
+    }
+
+    pub fn fg_muted() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::DarkGray,
+            ThemeVariant::HighContrast => Color::Gray,
+        }
+    }
+
+    pub fn fg_accent() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::Cyan,
+            ThemeVariant::HighContrast => Color::LightCyan,
+        }
+    }
+
+    pub fn fg_warning() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::Yellow,
+            ThemeVariant::HighContrast => Color::LightYellow,
+        }
+    }
 
     // Semantic
-    pub const UNREAD_INDICATOR: Color = Color::Cyan;
-    pub const THREAD_BADGE: Color = Color::Yellow;
-    pub const BORDER: Color = Color::DarkGray;
-    pub const BORDER_FOCUSED: Color = Color::Cyan;
+    pub fn unread_indicator() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::Magenta,
+            ThemeVariant::HighContrast => Color::LightMagenta,
+        }
+    }
+
+    pub fn thread_badge() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::Yellow,
+            ThemeVariant::HighContrast => Color::LightYellow,
+        }
+    }
+
+    pub fn border() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::DarkGray,
+            ThemeVariant::HighContrast => Color::Gray,
+        }
+    }
+
+    pub fn border_focused() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::Cyan,
+            ThemeVariant::HighContrast => Color::LightCyan,
+        }
+    }
 
     // Status colors
-    pub const STATUS_CONNECTED: Color = Color::Green;
-    pub const STATUS_DISCONNECTED: Color = Color::Red;
-    pub const STATUS_SYNCING: Color = Color::Yellow;
+    pub fn status_connected() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::Green,
+            ThemeVariant::HighContrast => Color::LightGreen,
+        }
+    }
+
+    pub fn status_disconnected() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::Red,
+            ThemeVariant::HighContrast => Color::LightRed,
+        }
+    }
+
+    pub fn status_syncing() -> Color {
+        match current_theme() {
+            ThemeVariant::Dark => Color::Yellow,
+            ThemeVariant::HighContrast => Color::LightYellow,
+        }
+    }
 }
 
 /// UI symbols - centralized for consistency
@@ -52,8 +147,10 @@ pub mod symbols {
     // Replied indicator
     pub const REPLIED: &str = "↩";
 
-    // Thread child indent (visual tree line)
-    pub const THREAD_CHILD: &str = "  │ ";
+    // Thread child indent (visual tree lines)
+    pub const THREAD_CHILD: &str = "  │ "; // Continuation line
+    pub const THREAD_CHILD_MID: &str = "  ├─"; // Middle child
+    pub const THREAD_CHILD_LAST: &str = "  └─"; // Last child
 
     // Status indicators
     pub const CONNECTED: &str = "●";
@@ -74,8 +171,8 @@ impl Theme {
     /// Base style for selected items
     pub fn selected() -> Style {
         Style::default()
-            .bg(colors::BG_SELECTION)
-            .fg(colors::FG_PRIMARY)
+            .bg(colors::bg_selection())
+            .fg(colors::fg_primary())
     }
 
     /// Style for selected item with bold text
@@ -87,111 +184,113 @@ impl Theme {
 
     /// Normal text
     pub fn text() -> Style {
-        Style::default().fg(colors::FG_PRIMARY)
+        Style::default().fg(colors::fg_primary())
     }
 
     /// Secondary/read text
     pub fn text_secondary() -> Style {
-        Style::default().fg(colors::FG_SECONDARY)
+        Style::default().fg(colors::fg_secondary())
     }
 
     /// Muted/disabled text
     pub fn text_muted() -> Style {
-        Style::default().fg(colors::FG_MUTED)
+        Style::default().fg(colors::fg_muted())
     }
 
     /// Unread/bold text
     pub fn text_unread() -> Style {
         Style::default()
-            .fg(colors::FG_PRIMARY)
+            .fg(colors::fg_primary())
             .add_modifier(Modifier::BOLD)
     }
 
     /// Accent colored text
     pub fn text_accent() -> Style {
-        Style::default().fg(colors::FG_ACCENT)
+        Style::default().fg(colors::fg_accent())
     }
 
     // === Status Bar ===
 
     pub fn status_bar() -> Style {
         Style::default()
-            .bg(colors::BG_STATUS)
-            .fg(colors::FG_PRIMARY)
+            .bg(colors::bg_status())
+            .fg(colors::fg_primary())
     }
 
     pub fn error_bar() -> Style {
-        Style::default().bg(colors::BG_ERROR).fg(colors::FG_PRIMARY)
+        Style::default()
+            .bg(colors::bg_error())
+            .fg(colors::fg_primary())
     }
 
     // === Help Bar ===
 
     pub fn help_key() -> Style {
         Style::default()
-            .bg(colors::BG_STATUS)
-            .fg(colors::FG_WARNING)
+            .bg(colors::bg_status())
+            .fg(colors::fg_warning())
     }
 
     pub fn help_desc() -> Style {
-        Style::default().fg(colors::FG_MUTED)
+        Style::default().fg(colors::fg_muted())
     }
 
     // === Borders ===
 
     pub fn border() -> Style {
-        Style::default().fg(colors::BORDER)
+        Style::default().fg(colors::border())
     }
 
     pub fn border_focused() -> Style {
-        Style::default().fg(colors::BORDER_FOCUSED)
+        Style::default().fg(colors::border_focused())
     }
 
     // === Indicators ===
 
     pub fn unread_indicator() -> Style {
-        Style::default().fg(colors::UNREAD_INDICATOR)
+        Style::default().fg(colors::unread_indicator())
     }
 
     /// Unread indicator that preserves selection background
     pub fn unread_indicator_selected() -> Style {
         Style::default()
-            .bg(colors::BG_SELECTION)
-            .fg(colors::UNREAD_INDICATOR)
+            .bg(colors::bg_selection())
+            .fg(colors::unread_indicator())
     }
 
     /// Star indicator (yellow)
     pub fn star_indicator() -> Style {
-        Style::default().fg(colors::FG_WARNING)
+        Style::default().fg(colors::fg_warning())
     }
 
     /// Star indicator that preserves selection background
     pub fn star_indicator_selected() -> Style {
         Style::default()
-            .bg(colors::BG_SELECTION)
-            .fg(colors::FG_WARNING)
+            .bg(colors::bg_selection())
+            .fg(colors::fg_warning())
     }
 
     /// Replied indicator (muted)
     pub fn replied_indicator() -> Style {
-        Style::default().fg(colors::FG_MUTED)
+        Style::default().fg(colors::fg_muted())
     }
 
     /// Replied indicator that preserves selection background
     pub fn replied_indicator_selected() -> Style {
         Style::default()
-            .bg(colors::BG_SELECTION)
-            .fg(colors::FG_MUTED)
+            .bg(colors::bg_selection())
+            .fg(colors::fg_muted())
     }
 
     pub fn thread_badge() -> Style {
-        Style::default().fg(colors::THREAD_BADGE)
+        Style::default().fg(colors::thread_badge())
     }
 
     // === Labels ===
 
     pub fn label() -> Style {
         Style::default()
-            .fg(colors::FG_MUTED)
+            .fg(colors::fg_muted())
             .add_modifier(Modifier::BOLD)
     }
 
@@ -200,19 +299,19 @@ impl Theme {
     /// Highlighted input text (yellow, bold)
     pub fn input_highlight() -> Style {
         Style::default()
-            .fg(colors::FG_WARNING)
+            .fg(colors::fg_warning())
             .add_modifier(Modifier::BOLD)
     }
 
     /// Success/confirmation text (green)
     pub fn text_success() -> Style {
-        Style::default().fg(colors::STATUS_CONNECTED)
+        Style::default().fg(colors::status_connected())
     }
 
     /// Link/URL text (cyan, underlined)
     pub fn text_link() -> Style {
         Style::default()
-            .fg(colors::FG_ACCENT)
+            .fg(colors::fg_accent())
             .add_modifier(Modifier::UNDERLINED)
     }
 
@@ -221,29 +320,37 @@ impl Theme {
     /// Connected status indicator (green)
     pub fn status_connected() -> Style {
         Style::default()
-            .bg(colors::BG_STATUS)
-            .fg(colors::STATUS_CONNECTED)
+            .bg(colors::bg_status())
+            .fg(colors::status_connected())
     }
 
     /// Disconnected status indicator (red)
     pub fn status_disconnected() -> Style {
         Style::default()
-            .bg(colors::BG_STATUS)
-            .fg(colors::STATUS_DISCONNECTED)
+            .bg(colors::bg_status())
+            .fg(colors::status_disconnected())
     }
 
     /// Syncing/loading status indicator (yellow)
     pub fn status_syncing() -> Style {
         Style::default()
-            .bg(colors::BG_STATUS)
-            .fg(colors::STATUS_SYNCING)
+            .bg(colors::bg_status())
+            .fg(colors::status_syncing())
     }
 
-    /// Muted status text (uses secondary gray for visibility on dark status bar)
+    /// Muted status text (low emphasis dividers and separators)
     pub fn status_muted() -> Style {
         Style::default()
-            .bg(colors::BG_STATUS)
-            .fg(colors::FG_SECONDARY)
+            .bg(colors::bg_status())
+            .fg(colors::fg_muted())
+    }
+
+    /// Status bar info text (readable secondary info like timestamps and memory)
+    /// Uses primary color for better contrast on dark status bar background
+    pub fn status_info() -> Style {
+        Style::default()
+            .bg(colors::bg_status())
+            .fg(colors::fg_primary())
     }
 
     // === Account Indicators ===
@@ -251,34 +358,36 @@ impl Theme {
     /// Account with new mail (cyan dot)
     pub fn account_new_mail() -> Style {
         Style::default()
-            .bg(colors::BG_STATUS)
-            .fg(colors::UNREAD_INDICATOR)
+            .bg(colors::bg_status())
+            .fg(colors::unread_indicator())
     }
 
     /// Account with no new mail (muted)
     pub fn account_no_new() -> Style {
-        Style::default().bg(colors::BG_STATUS).fg(colors::FG_MUTED)
+        Style::default()
+            .bg(colors::bg_status())
+            .fg(colors::fg_muted())
     }
 
     /// Account with error (red)
     pub fn account_error() -> Style {
         Style::default()
-            .bg(colors::BG_STATUS)
-            .fg(colors::STATUS_DISCONNECTED)
+            .bg(colors::bg_status())
+            .fg(colors::status_disconnected())
     }
 
     /// Account name text in status bar
     pub fn account_name() -> Style {
         Style::default()
-            .bg(colors::BG_STATUS)
-            .fg(colors::FG_SECONDARY)
+            .bg(colors::bg_status())
+            .fg(colors::fg_secondary())
     }
 
     /// New mail count badge
     pub fn account_badge() -> Style {
         Style::default()
-            .bg(colors::BG_STATUS)
-            .fg(colors::THREAD_BADGE)
+            .bg(colors::bg_status())
+            .fg(colors::thread_badge())
     }
 }
 
@@ -286,7 +395,7 @@ impl Theme {
 /// This ensures the selection highlight covers the entire row.
 pub fn with_selection_bg(style: Style, selected: bool) -> Style {
     if selected {
-        style.bg(colors::BG_SELECTION)
+        style.bg(colors::bg_selection())
     } else {
         style
     }

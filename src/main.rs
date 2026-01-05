@@ -307,6 +307,9 @@ async fn main() -> Result<()> {
             let config = Config::load()?;
             config.ensure_dirs()?;
 
+            // Initialize theme from config
+            crate::ui::theme::init_theme(config.ui.theme);
+
             // Get the default account
             let account = config.default_account().ok_or_else(|| {
                 anyhow::anyhow!("No accounts configured. Run 'bltz setup' first.")

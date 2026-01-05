@@ -136,6 +136,7 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
             current_line += 2;
 
             // Render each email in thread
+            let email_count = thread.email_indices.len();
             for (email_idx, email) in thread.emails(&state.emails).enumerate() {
                 if current_line >= scroll_end {
                     break;
@@ -147,12 +148,14 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
                     let is_email_selected =
                         is_current_thread && state.thread.selected_in_thread == email_idx + 1;
                     let email_match_type = state.get_match_type(email.uid);
+                    let is_last = email_idx == email_count - 1;
                     let email_items = render_thread_email(
                         email,
                         is_email_selected,
                         inner.width,
                         &state.search.query,
                         email_match_type,
+                        is_last,
                     );
                     items.extend(email_items);
                 }
@@ -348,11 +351,15 @@ pub fn render_thread_header(
         Style::default()
     };
 
-    // Subject style
+    // Subject style - bold for unread, muted for read
     let subject_style = if selected {
-        Theme::selected()
+        if thread.has_unread() {
+            Theme::selected_bold()
+        } else {
+            Theme::selected()
+        }
     } else if thread.has_unread() {
-        Theme::text()
+        Theme::text_unread()
     } else {
         Theme::text_muted()
     };
@@ -412,6 +419,7 @@ pub fn render_thread_email(
     width: u16,
     search_query: &str,
     match_type: MatchType,
+    is_last: bool,
 ) -> Vec<ListItem<'static>> {
     let width = width as usize;
 
@@ -467,8 +475,14 @@ pub fn render_thread_email(
         from_highlight_style,
     );
 
+    // Use tree connector: ├─ for middle items, └─ for last item
+    let tree_connector = if is_last {
+        symbols::THREAD_CHILD_LAST
+    } else {
+        symbols::THREAD_CHILD_MID
+    };
     let mut line1_spans = vec![Span::styled(
-        symbols::THREAD_CHILD,
+        tree_connector,
         with_selection_bg(Theme::border(), selected),
     )];
     line1_spans.extend(from_spans);
@@ -551,11 +565,15 @@ pub fn render_thread_email(
         Style::default()
     };
 
-    // Subject style
+    // Subject style - bold for unread, muted for read
     let subject_style = if selected {
-        Theme::selected()
+        if !email.is_seen() {
+            Theme::selected_bold()
+        } else {
+            Theme::selected()
+        }
     } else if !email.is_seen() {
-        Theme::text()
+        Theme::text_unread()
     } else {
         Theme::text_muted()
     };
@@ -582,11 +600,14 @@ pub fn render_thread_email(
         subject_highlight_style,
     );
 
+    // For line 2: use continuation │ for non-last, spaces for last
+    let line2_prefix = if is_last {
+        "    "
+    } else {
+        symbols::THREAD_CHILD
+    };
     let mut line2_spans = vec![
-        Span::styled(
-            symbols::THREAD_CHILD,
-            with_selection_bg(Theme::border(), selected),
-        ),
+        Span::styled(line2_prefix, with_selection_bg(Theme::border(), selected)),
         Span::styled(unread_indicator, unread_style),
         Span::styled(attachment_indicator, attach_style),
         Span::styled(star_indicator, star_style),

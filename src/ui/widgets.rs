@@ -134,9 +134,29 @@ pub fn format_date(timestamp: i64) -> String {
     }
 }
 
-/// Format date for display (static format)
+/// Format date as compact relative time for thread list (2h, 3d, 2w)
 pub fn format_relative_date(timestamp: i64) -> String {
-    format_date(timestamp)
+    use chrono::{DateTime, Local, Utc};
+
+    let then = DateTime::from_timestamp(timestamp, 0)
+        .unwrap_or_else(Utc::now)
+        .with_timezone(&Local);
+    let now = Local::now();
+    let diff = now.signed_duration_since(then);
+
+    if diff.num_seconds() < 60 {
+        "now".to_string()
+    } else if diff.num_minutes() < 60 {
+        format!("{}m", diff.num_minutes())
+    } else if diff.num_hours() < 24 {
+        format!("{}h", diff.num_hours())
+    } else if diff.num_days() < 7 {
+        format!("{}d", diff.num_days())
+    } else if diff.num_days() < 30 {
+        format!("{}w", (diff.num_days() / 7).max(1))
+    } else {
+        then.format("%b %d").to_string()
+    }
 }
 
 /// Sanitize text for display: remove control characters and ANSI escape sequences

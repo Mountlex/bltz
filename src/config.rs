@@ -112,6 +112,8 @@ pub struct SmtpConfig {
 pub struct UiConfig {
     #[serde(default)]
     pub keybinding_mode: KeybindingMode,
+    #[serde(default)]
+    pub theme: ThemeVariant,
     #[serde(default = "default_date_format")]
     pub date_format: String,
     #[serde(default = "default_preview_length")]
@@ -130,6 +132,15 @@ pub enum KeybindingMode {
     #[default]
     Vim,
     Arrows,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeVariant {
+    #[default]
+    Dark,
+    #[serde(rename = "high-contrast")]
+    HighContrast,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +223,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             keybinding_mode: KeybindingMode::default(),
+            theme: ThemeVariant::default(),
             date_format: default_date_format(),
             preview_length: default_preview_length(),
             split_ratio: default_split_ratio(),

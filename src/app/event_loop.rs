@@ -71,9 +71,18 @@ impl App {
                 self.dirty = true;
                 match handle_input(evt, &self.state, &self.bindings) {
                     InputResult::Quit => break,
-                    InputResult::Action(action) => self.handle_action(action).await?,
-                    InputResult::Char(c) => self.handle_char(c).await,
-                    InputResult::Backspace => self.handle_backspace().await,
+                    InputResult::Action(action) => {
+                        self.state.acknowledge_error();
+                        self.handle_action(action).await?;
+                    }
+                    InputResult::Char(c) => {
+                        self.state.acknowledge_error();
+                        self.handle_char(c).await;
+                    }
+                    InputResult::Backspace => {
+                        self.state.acknowledge_error();
+                        self.handle_backspace().await;
+                    }
                     InputResult::Continue => {}
                 }
             }

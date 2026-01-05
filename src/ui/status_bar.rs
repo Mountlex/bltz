@@ -90,6 +90,8 @@ pub struct StatusInfo<'a> {
     pub starred_view: bool,
     /// Whether conversation mode is enabled (show sent in threads)
     pub conversation_mode: bool,
+    /// Whether there's an unacknowledged error (show indicator)
+    pub has_error: bool,
 }
 
 /// Calculate display width of a string (accounting for Unicode)
@@ -134,6 +136,9 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
     } else {
         format!(" {} ", symbols::DISCONNECTED)
     };
+
+    // Error indicator (red !)
+    let error_indicator = if info.has_error { "! " } else { "" };
 
     // Build folder info as spans (unread count is bold)
     let unread_style = style.add_modifier(ratatui::style::Modifier::BOLD);
@@ -190,7 +195,7 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
     // Build right side content
     let status_msg = if let Some(msg) = info.status_message {
         if !msg.is_empty() {
-            format!("{} | ", msg)
+            format!("{} │ ", msg)
         } else {
             String::new()
         }
@@ -199,13 +204,13 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
     };
 
     let memory_info = if let Some(bytes) = get_memory_usage() {
-        format!("{} | ", format_memory(bytes))
+        format!("{} │ ", format_memory(bytes))
     } else {
         String::new()
     };
 
     let sync_info = if let Some(ts) = info.last_sync {
-        format!("{} | ", format_relative_time(ts))
+        format!("{} │ ", format_relative_time(ts))
     } else {
         String::new()
     };
@@ -221,7 +226,8 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
     );
 
     // Calculate widths to determine available space for account
-    let left_width = display_width(&conn_indicator) + folder_info_width;
+    let left_width =
+        display_width(&conn_indicator) + display_width(error_indicator) + folder_info_width;
     let fixed_right_width = display_width(&status_msg)
         + display_width(&memory_info)
         + display_width(&sync_info)
@@ -255,15 +261,19 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
     };
 
     let mut spans = vec![Span::styled(conn_indicator, conn_style)];
+    // Add error indicator if present
+    if info.has_error {
+        spans.push(Span::styled(error_indicator, Theme::status_disconnected()));
+    }
     // Add folder info spans (with bold unread count)
     for (text, span_style) in folder_info_spans {
         spans.push(Span::styled(text, span_style));
     }
     spans.extend([
         Span::styled(padding, style),
-        Span::styled(status_msg, Theme::status_muted()),
-        Span::styled(memory_info, Theme::status_muted()),
-        Span::styled(sync_info, Theme::status_muted()),
+        Span::styled(status_msg, Theme::status_info()),
+        Span::styled(memory_info, Theme::status_info()),
+        Span::styled(sync_info, Theme::status_info()),
         Span::styled(format!("{} ", account), style),
     ]);
 
@@ -285,7 +295,7 @@ fn build_account_indicators(accounts: &[OtherAccountInfo]) -> Vec<(String, Style
     }
 
     let mut spans = Vec::new();
-    spans.push(("| ".to_string(), Theme::status_muted()));
+    spans.push(("│ ".to_string(), Theme::status_muted()));
 
     for (i, account) in accounts.iter().enumerate() {
         if i > 0 {

@@ -6,6 +6,20 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use super::theme::Theme;
 use crate::app::state::{AddAccountAuth, AddAccountData, AddAccountStep, AppState};
 
+/// Get the current step number and total steps for progress display
+fn step_progress(step: &AddAccountStep) -> (u8, u8) {
+    const TOTAL_STEPS: u8 = 6;
+    let current = match step {
+        AddAccountStep::ChooseAuthMethod => 1,
+        AddAccountStep::EnterEmail => 2,
+        AddAccountStep::EnterPassword | AddAccountStep::OAuth2Flow => 3,
+        AddAccountStep::EnterImapServer => 4,
+        AddAccountStep::EnterSmtpServer => 5,
+        AddAccountStep::Confirm => 6,
+    };
+    (current, TOTAL_STEPS)
+}
+
 pub fn render_add_account(
     frame: &mut Frame,
     _state: &AppState,
@@ -28,9 +42,11 @@ pub fn render_add_account(
     // Clear the dialog area
     frame.render_widget(Clear, dialog_area);
 
-    // Render the dialog border
+    // Render the dialog border with step progress
+    let (current_step, total_steps) = step_progress(step);
+    let title = format!(" Add Account [{}/{}] ", current_step, total_steps);
     let block = Block::default()
-        .title(" Add Account ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(Theme::border_focused());
 

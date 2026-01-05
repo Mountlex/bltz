@@ -27,7 +27,9 @@ use super::widgets::{
     StatusInfo, enhanced_status_bar, error_bar, format_date, help_bar, sanitize_text,
 };
 
-use popups::{render_command_bar, render_folder_picker, render_unified_help_popup};
+use popups::{
+    render_command_bar, render_confirm_modal, render_folder_picker, render_unified_help_popup,
+};
 use thread::render_thread_list;
 
 pub fn render_inbox(frame: &mut Frame, state: &AppState) {
@@ -100,6 +102,7 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
         other_accounts: &state.connection.other_accounts,
         starred_view: state.is_starred_view(),
         conversation_mode: state.conversation_mode,
+        has_error: state.has_unacknowledged_error(),
     };
     enhanced_status_bar(frame, status_area, &status_info);
 
@@ -151,6 +154,11 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
     // Folder picker overlay (rendered last so it appears on top)
     if state.modal.is_folder_picker() {
         render_folder_picker(frame, frame.area(), state);
+    }
+
+    // Confirmation modal for destructive commands
+    if let Some(pending) = state.modal.pending_confirmation() {
+        render_confirm_modal(frame, frame.area(), pending);
     }
 
     // Help popup (rendered last so it appears on top)
@@ -232,12 +240,13 @@ fn render_preview(frame: &mut Frame, area: Rect, state: &AppState) {
             };
             let date_lines = 1; // Date is always short
             let subject_lines = lines_for_field(&email.subject);
+            let attach_lines = if email.has_attachments { 1 } else { 0 };
 
-            (from_lines + to_lines + cc_lines + date_lines + subject_lines)
+            (from_lines + to_lines + cc_lines + date_lines + subject_lines + attach_lines)
                 .min(inner.height.saturating_sub(5))
         } else {
-            // Collapsed: 1 line per field
-            4 + if has_cc { 1 } else { 0 }
+            // Collapsed: 1 line per field (From, To, Date, Subject + optional CC + optional Attach)
+            4 + if has_cc { 1 } else { 0 } + if email.has_attachments { 1 } else { 0 }
         };
 
         let sections = Layout::default()
@@ -254,9 +263,15 @@ fn render_preview(frame: &mut Frame, area: Rect, state: &AppState) {
         // Render body
         render_email_body(frame, sections[1], state);
     } else {
-        let paragraph = Paragraph::new("No email selected")
-            .style(Theme::text_muted())
-            .alignment(ratatui::layout::Alignment::Center);
+        // Show helpful hints when no email is selected
+        let hint_lines = vec![
+            Line::from(Span::styled("No email selected", Theme::text_secondary())),
+            Line::from(""),
+            Line::from(Span::styled("j/k to navigate", Theme::text_muted())),
+            Line::from(Span::styled("Enter to read", Theme::text_muted())),
+            Line::from(Span::styled(". for help", Theme::text_muted())),
+        ];
+        let paragraph = Paragraph::new(hint_lines).alignment(ratatui::layout::Alignment::Center);
         frame.render_widget(paragraph, inner);
     }
 }
@@ -314,6 +329,14 @@ fn render_email_headers(frame: &mut Frame, area: Rect, email: &EmailHeader, expa
         Span::styled(&email.subject, Theme::text_unread()),
     ]));
 
+    // Attachments (if present)
+    if email.has_attachments {
+        lines.push(Line::from(vec![
+            Span::styled("Attach:  ", label_style),
+            Span::styled("📎 Has attachments", Theme::text_accent()),
+        ]));
+    }
+
     // Use Paragraph with Wrap when expanded to allow natural wrapping
     let paragraph = if expanded {
         Paragraph::new(lines).wrap(Wrap { trim: false })
@@ -347,7 +370,39 @@ fn render_email_body(frame: &mut Frame, area: Rect, state: &AppState) {
         }
     };
 
-    let text = Text::raw(sanitized);
+    // Build styled text with visual quote bars for quoted lines
+    // Alternating colors for nested quotes: cyan, yellow, magenta, green
+    let quote_colors = [
+        Theme::text_accent(),      // Cyan - level 1
+        Theme::star_indicator(),   // Yellow - level 2
+        Theme::unread_indicator(), // Magenta - level 3
+        Theme::text_success(),     // Green - level 4
+    ];
+
+    let lines: Vec<Line> = sanitized
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('>') {
+                // Count quote depth (number of leading > characters)
+                let depth = trimmed.chars().take_while(|&c| c == '>').count().min(4);
+                // Build quote bar spans with alternating colors
+                let mut spans: Vec<Span> = Vec::with_capacity(depth + 1);
+                for i in 0..depth {
+                    let color_idx = i % quote_colors.len();
+                    spans.push(Span::styled("│ ", quote_colors[color_idx]));
+                }
+                // Strip leading > characters and spaces
+                let content = trimmed.trim_start_matches('>').trim_start();
+                spans.push(Span::styled(content, Theme::text_muted()));
+                Line::from(spans)
+            } else {
+                Line::raw(line)
+            }
+        })
+        .collect();
+
+    let text = Text::from(lines);
 
     let paragraph = Paragraph::new(text)
         .wrap(Wrap { trim: false })
