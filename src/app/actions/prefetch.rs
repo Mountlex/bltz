@@ -1,5 +1,6 @@
 //! Email body prefetching
 
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use crate::app::state::View;
@@ -113,14 +114,11 @@ impl App {
 
         // Merge with existing pending prefetch to avoid losing UIDs during rapid navigation
         let (merged_uids, timestamp) = match self.pending_prefetch.take() {
-            Some((mut existing_uids, ts)) => {
-                // Add new UIDs, avoiding duplicates
-                for uid in uids_to_fetch {
-                    if !existing_uids.contains(&uid) {
-                        existing_uids.push(uid);
-                    }
-                }
-                (existing_uids, ts) // Keep original timestamp for debounce
+            Some((existing_uids, ts)) => {
+                // Use HashSet for O(1) deduplication instead of O(n) Vec::contains
+                let mut uid_set: HashSet<u32> = existing_uids.into_iter().collect();
+                uid_set.extend(uids_to_fetch);
+                (uid_set.into_iter().collect(), ts) // Keep original timestamp for debounce
             }
             None => (uids_to_fetch, Instant::now()),
         };

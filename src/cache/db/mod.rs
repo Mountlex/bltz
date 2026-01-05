@@ -29,7 +29,7 @@ use crate::mail::types::{Attachment, EmailBody, EmailFlags, EmailHeader};
 const POOL_SIZE: u32 = 4;
 
 /// Moka cache settings for hot data.
-const BODY_CACHE_MAX_CAPACITY: u64 = 100; // Max cached bodies
+const BODY_CACHE_MAX_CAPACITY: u64 = 600; // Max cached bodies (slightly above page size of 500)
 const BODY_CACHE_TTL_SECS: u64 = 1800; // 30 minutes TTL (email bodies are immutable)
 
 pub struct Cache {

@@ -14,7 +14,7 @@ rust-version = "1.92"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "net", "signal", "io-util", "macros"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 
 # TUI
