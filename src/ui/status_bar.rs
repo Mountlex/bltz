@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::theme::{Theme, symbols};
-use crate::app::state::OtherAccountInfo;
+use crate::app::state::{AppState, OtherAccountInfo};
 use crate::constants::SPINNER_FRAME_MS;
 
 /// Get current process memory usage (RSS) in bytes
@@ -92,6 +92,39 @@ pub struct StatusInfo<'a> {
     pub conversation_mode: bool,
     /// Whether there's an unacknowledged error (show indicator)
     pub has_error: bool,
+}
+
+impl<'a> StatusInfo<'a> {
+    /// Creates StatusInfo from AppState.
+    ///
+    /// * `state` - The application state
+    /// * `visible_count` - If Some, enables search display with this result count.
+    ///   If None, search query/results are hidden (e.g., reader view).
+    pub fn from_state(state: &'a AppState, visible_count: Option<usize>) -> Self {
+        let search_query = visible_count
+            .and_then(|_| (!state.search.query.is_empty()).then_some(state.search.query.as_str()));
+
+        Self {
+            folder: state.folder.display_name(),
+            unread: state.unread_count,
+            total: state.total_count,
+            connected: state.connection.connected,
+            loading: state.status.loading,
+            last_sync: state.connection.last_sync,
+            account: state.connection.display_account(),
+            search_query,
+            search_results: visible_count.unwrap_or(0),
+            status_message: if state.status.message.is_empty() {
+                None
+            } else {
+                Some(&state.status.message)
+            },
+            other_accounts: &state.connection.other_accounts,
+            starred_view: state.is_starred_view(),
+            conversation_mode: state.conversation_mode,
+            has_error: state.has_unacknowledged_error(),
+        }
+    }
 }
 
 /// Calculate display width of a string (accounting for Unicode)

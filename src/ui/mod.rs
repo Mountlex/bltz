@@ -1,5 +1,6 @@
 mod add_account;
 pub mod app;
+mod components;
 mod composer;
 mod contacts;
 mod inbox;

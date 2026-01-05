@@ -90,7 +90,7 @@ impl App {
                 // Try to keep body from cache for smooth transition
                 if let Ok(Some(body)) = self.cache.get_email_body(&self.cache_key(), uid).await {
                     self.state.reader.set_body(Some(body));
-                    self.last_prefetch_uid = Some(uid);
+                    self.prefetch.last_uid = Some(uid);
                 } else {
                     self.state.reader.set_body(None);
                 }

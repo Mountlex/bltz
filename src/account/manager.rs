@@ -30,6 +30,33 @@ pub struct AccountManager {
 }
 
 impl AccountManager {
+    /// Get credentials for an account based on its auth method.
+    /// For OAuth2, exchanges refresh token for a fresh access token.
+    async fn get_credentials(config: &AccountConfig) -> Result<String> {
+        let credentials = CredentialStore::new(&config.email);
+
+        match &config.auth {
+            AuthMethod::Password => credentials.get_imap_password(),
+            AuthMethod::OAuth2 { client_id, .. } => {
+                let refresh_token = credentials.get_oauth2_refresh_token().map_err(|e| {
+                    anyhow::anyhow!(
+                        "OAuth2 refresh token not found: {}. Please re-authenticate.",
+                        e
+                    )
+                })?;
+
+                crate::oauth2::get_access_token(client_id, &refresh_token)
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "Failed to refresh OAuth2 access token: {}. Please re-authenticate.",
+                            e
+                        )
+                    })
+            }
+        }
+    }
+
     /// Create a new account manager and spawn IMAP actors for all accounts
     pub async fn new(config: &Config, cache: Arc<Cache>) -> Result<Self> {
         let mut handles = Vec::new();
@@ -54,30 +81,7 @@ impl AccountManager {
 
     /// Spawn a single account's IMAP actor
     async fn spawn_account(config: AccountConfig, cache: Arc<Cache>) -> Result<AccountHandle> {
-        let credentials = CredentialStore::new(&config.email);
-
-        // Get credentials based on auth method
-        let password = match &config.auth {
-            AuthMethod::Password => credentials.get_imap_password()?,
-            AuthMethod::OAuth2 { client_id, .. } => {
-                // For OAuth2, get the stored refresh token and exchange for a fresh access token
-                let refresh_token = credentials.get_oauth2_refresh_token().map_err(|e| {
-                    anyhow::anyhow!(
-                        "OAuth2 refresh token not found: {}. Please re-authenticate.",
-                        e
-                    )
-                })?;
-
-                crate::oauth2::get_access_token(client_id, &refresh_token)
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!(
-                            "Failed to refresh OAuth2 access token: {}. Please re-authenticate.",
-                            e
-                        )
-                    })?
-            }
-        };
+        let password = Self::get_credentials(&config).await?;
 
         let imap_client = ImapClient::new(
             config.imap.clone(),
@@ -110,29 +114,7 @@ impl AccountManager {
         }
 
         let config = &handle.config;
-        let credentials = CredentialStore::new(&config.email);
-
-        // Get credentials based on auth method
-        let password = match &config.auth {
-            AuthMethod::Password => credentials.get_imap_password()?,
-            AuthMethod::OAuth2 { client_id, .. } => {
-                let refresh_token = credentials.get_oauth2_refresh_token().map_err(|e| {
-                    anyhow::anyhow!(
-                        "OAuth2 refresh token not found: {}. Please re-authenticate.",
-                        e
-                    )
-                })?;
-
-                crate::oauth2::get_access_token(client_id, &refresh_token)
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!(
-                            "Failed to refresh OAuth2 access token: {}. Please re-authenticate.",
-                            e
-                        )
-                    })?
-            }
-        };
+        let password = Self::get_credentials(config).await?;
 
         let imap_client = ImapClient::new(
             config.imap.clone(),

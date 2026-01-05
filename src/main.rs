@@ -1,4 +1,5 @@
 mod account;
+mod actor;
 mod ai;
 mod app;
 mod cache;

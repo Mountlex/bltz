@@ -1,10 +1,17 @@
 //! AI actor for async processing of AI requests
 
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 use super::client::OpenRouterClient;
 use super::prompts;
+use crate::actor::{RetryConfig, with_retry};
 use crate::mail::ThreadId;
+
+/// Default retry configuration for AI operations
+fn default_retry_config() -> RetryConfig {
+    RetryConfig::new(3, Duration::from_millis(500), Duration::from_secs(10))
+}
 
 /// Commands that can be sent to the AI actor
 #[derive(Debug)]
@@ -81,22 +88,23 @@ async fn ai_actor_loop(
         match cmd {
             AiCommand::SummarizeEmail { uid, subject, body } => {
                 let user_content = format!("Subject: {}\n\n{}", subject, body);
-                match client
-                    .complete(
+                let retry_config = default_retry_config();
+                let result = with_retry(&retry_config, || {
+                    client.complete(
                         prompts::EMAIL_SUMMARY_SYSTEM,
                         &user_content,
                         summary_max_tokens,
                     )
-                    .await
-                {
-                    Ok(summary) => {
-                        let _ = event_tx.send(AiEvent::EmailSummary { uid, summary }).await;
-                    }
-                    Err(e) => {
-                        let _ = event_tx
-                            .send(AiEvent::Error(format!("Summary failed: {}", e)))
-                            .await;
-                    }
+                })
+                .await;
+
+                let event = match result {
+                    Ok(summary) => AiEvent::EmailSummary { uid, summary },
+                    Err(e) => AiEvent::Error(format!("Summary failed: {}", e)),
+                };
+                if event_tx.send(event).await.is_err() {
+                    tracing::warn!("AI actor: event receiver dropped");
+                    break;
                 }
             }
 
@@ -109,42 +117,43 @@ async fn ai_actor_loop(
                     .collect::<Vec<_>>()
                     .join("\n\n");
 
-                match client
-                    .complete(
+                let retry_config = default_retry_config();
+                let result = with_retry(&retry_config, || {
+                    client.complete(
                         prompts::THREAD_SUMMARY_SYSTEM,
                         &thread_content,
                         summary_max_tokens,
                     )
-                    .await
-                {
-                    Ok(summary) => {
-                        let _ = event_tx
-                            .send(AiEvent::ThreadSummary { thread_id, summary })
-                            .await;
-                    }
-                    Err(e) => {
-                        let _ = event_tx
-                            .send(AiEvent::Error(format!("Thread summary failed: {}", e)))
-                            .await;
-                    }
+                })
+                .await;
+
+                let event = match result {
+                    Ok(summary) => AiEvent::ThreadSummary { thread_id, summary },
+                    Err(e) => AiEvent::Error(format!("Thread summary failed: {}", e)),
+                };
+                if event_tx.send(event).await.is_err() {
+                    tracing::warn!("AI actor: event receiver dropped");
+                    break;
                 }
             }
 
             AiCommand::Polish { original } => {
-                match client
-                    .complete(prompts::POLISH_SYSTEM, &original, polish_max_tokens)
-                    .await
-                {
-                    Ok(polished) => {
-                        let _ = event_tx
-                            .send(AiEvent::Polished { original, polished })
-                            .await;
-                    }
-                    Err(e) => {
-                        let _ = event_tx
-                            .send(AiEvent::Error(format!("Polish failed: {}", e)))
-                            .await;
-                    }
+                let retry_config = default_retry_config();
+                let result = with_retry(&retry_config, || {
+                    client.complete(prompts::POLISH_SYSTEM, &original, polish_max_tokens)
+                })
+                .await;
+
+                let event = match result {
+                    Ok(polished) => AiEvent::Polished {
+                        original: original.clone(),
+                        polished,
+                    },
+                    Err(e) => AiEvent::Error(format!("Polish failed: {}", e)),
+                };
+                if event_tx.send(event).await.is_err() {
+                    tracing::warn!("AI actor: event receiver dropped");
+                    break;
                 }
             }
 

@@ -21,7 +21,7 @@ impl App {
         };
 
         // Skip if we already have this body loaded
-        if self.last_prefetch_uid == Some(current_uid) && self.state.reader.body.is_some() {
+        if self.prefetch.last_uid == Some(current_uid) && self.state.reader.body.is_some() {
             return;
         }
 
@@ -41,7 +41,7 @@ impl App {
             .await
         {
             self.state.reader.set_body(Some(body));
-            self.last_prefetch_uid = Some(current_uid);
+            self.prefetch.last_uid = Some(current_uid);
         } else {
             // Only clear if not in cache - avoids flash of empty content
             self.state.reader.set_body(None);
@@ -54,7 +54,7 @@ impl App {
                     .clone()
                     .unwrap_or_else(|| self.state.folder.current.clone());
                 if email_folder != self.state.folder.current
-                    && !self.in_flight_fetches.contains(&current_uid)
+                    && !self.prefetch.in_flight.contains(&current_uid)
                 {
                     // Fetch this email's body directly
                     // Only mark as in-flight if send succeeds to avoid stuck UIDs
@@ -66,7 +66,7 @@ impl App {
                     ) {
                         Ok(_) => {
                             self.state.status.loading = true;
-                            self.in_flight_fetches.insert(current_uid);
+                            self.prefetch.in_flight.insert(current_uid);
                         }
                         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                             tracing::warn!(
@@ -90,7 +90,7 @@ impl App {
         // Filter out UIDs that are in-flight first
         let candidate_uids: Vec<u32> = all_uids
             .into_iter()
-            .filter(|uid| !self.in_flight_fetches.contains(uid))
+            .filter(|uid| !self.prefetch.in_flight.contains(uid))
             .collect();
 
         // Batch check cache for all candidates (single query instead of N queries)
@@ -113,7 +113,7 @@ impl App {
         }
 
         // Merge with existing pending prefetch to avoid losing UIDs during rapid navigation
-        let (merged_uids, timestamp) = match self.pending_prefetch.take() {
+        let (merged_uids, timestamp) = match self.prefetch.pending.take() {
             Some((existing_uids, ts)) => {
                 // Use HashSet for O(1) deduplication instead of O(n) Vec::contains
                 let mut uid_set: HashSet<u32> = existing_uids.into_iter().collect();
@@ -123,12 +123,12 @@ impl App {
             None => (uids_to_fetch, Instant::now()),
         };
 
-        self.pending_prefetch = Some((merged_uids, timestamp));
+        self.prefetch.pending = Some((merged_uids, timestamp));
     }
 
     /// Process any pending prefetch if debounce delay has passed
     pub(crate) async fn process_pending_prefetch(&mut self) {
-        let (uids, requested_at) = match self.pending_prefetch.take() {
+        let (uids, requested_at) = match self.prefetch.pending.take() {
             Some(p) => p,
             None => return,
         };
@@ -136,7 +136,7 @@ impl App {
         // Check if debounce delay has passed
         if requested_at.elapsed() < Duration::from_millis(PREFETCH_DEBOUNCE_MS) {
             // Put it back - not ready yet
-            self.pending_prefetch = Some((uids, requested_at));
+            self.prefetch.pending = Some((uids, requested_at));
             return;
         }
 
@@ -160,7 +160,7 @@ impl App {
             let email_cache_key = self.email_cache_key(email);
             if let Ok(Some(body)) = self.cache.get_email_body(&email_cache_key, email.uid).await {
                 self.state.reader.set_body(Some(body));
-                self.last_prefetch_uid = Some(email.uid);
+                self.prefetch.last_uid = Some(email.uid);
             }
         }
 
@@ -196,7 +196,7 @@ impl App {
                 Ok(_) => {
                     // Track all UIDs as in-flight
                     for uid in uids_to_fetch {
-                        self.in_flight_fetches.insert(uid);
+                        self.prefetch.in_flight.insert(uid);
                     }
                 }
                 Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
@@ -213,7 +213,7 @@ impl App {
 
         // Update last_prefetch_uid to current selection
         if let Some(uid) = current_uid {
-            self.last_prefetch_uid = Some(uid);
+            self.prefetch.last_uid = Some(uid);
         }
     }
 }

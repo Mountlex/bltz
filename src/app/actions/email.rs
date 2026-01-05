@@ -123,7 +123,7 @@ impl App {
                     .unwrap_or_else(|| self.cache_key());
                 if let Ok(Some(body)) = self.cache.get_email_body(&cache_key, uid).await {
                     self.state.reader.set_body(Some(body));
-                    self.last_prefetch_uid = Some(uid);
+                    self.prefetch.last_uid = Some(uid);
                 } else {
                     self.state.reader.set_body(None);
                 }
@@ -203,9 +203,9 @@ impl App {
                 self.state.thread.selected_in_thread = 0;
                 self.state.reader.set_body(None);
                 self.state.clear_search();
-                self.in_flight_fetches.clear();
-                self.last_prefetch_uid = None;
-                self.pending_prefetch = None;
+                self.prefetch.in_flight.clear();
+                self.prefetch.last_uid = None;
+                self.prefetch.pending = None;
 
                 // Request folder change and sync (updates cache with fresh data)
                 self.accounts
@@ -266,8 +266,8 @@ impl App {
                 self.state.invalidate_search_cache();
 
                 // Clear stale state if it references deleted email
-                if self.last_prefetch_uid == Some(uid) {
-                    self.last_prefetch_uid = None;
+                if self.prefetch.last_uid == Some(uid) {
+                    self.prefetch.last_uid = None;
                     self.state.reader.set_body(None);
                 }
 

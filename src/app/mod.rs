@@ -2,6 +2,7 @@
 
 mod actions;
 mod event_loop;
+mod handlers;
 pub mod render_thread;
 pub mod state;
 pub mod undo;
@@ -28,6 +29,31 @@ use state::{
 
 use self::undo::{PendingDeletion, UndoEntry};
 
+/// State for email body prefetching and debouncing
+#[derive(Debug, Default)]
+pub struct PrefetchState {
+    /// Track last prefetch UID to avoid redundant requests
+    pub last_uid: Option<u32>,
+    /// Pending prefetch: (uids, when_requested) - for debouncing rapid navigation
+    /// First UID is the current selection; remaining are nearby emails
+    pub pending: Option<(Vec<u32>, Instant)>,
+    /// UIDs currently being fetched (prevents duplicate requests)
+    pub in_flight: HashSet<u32>,
+    /// Whether we've done initial folder prefetch (after first INBOX sync)
+    pub folder_done: bool,
+    /// Whether folder prefetch is pending (waiting for folder list)
+    pub folder_pending: bool,
+}
+
+impl PrefetchState {
+    /// Clear all prefetch state (used on folder/account switch)
+    pub fn clear(&mut self) {
+        self.last_uid = None;
+        self.pending = None;
+        self.in_flight.clear();
+    }
+}
+
 pub struct App {
     pub(crate) config: Config,
     pub(crate) cache: Arc<Cache>,
@@ -35,17 +61,8 @@ pub struct App {
     pub(crate) accounts: AccountManager,
     pub(crate) state: AppState,
     pub(crate) bindings: KeyBindings,
-    /// Track last prefetch UID to avoid redundant requests
-    pub(crate) last_prefetch_uid: Option<u32>,
-    /// Pending prefetch: (uids, when_requested) - for debouncing rapid navigation
-    /// First UID is the current selection; remaining are nearby emails
-    pub(crate) pending_prefetch: Option<(Vec<u32>, Instant)>,
-    /// UIDs currently being fetched (prevents duplicate requests)
-    pub(crate) in_flight_fetches: HashSet<u32>,
-    /// Whether we've done initial folder prefetch (after first INBOX sync)
-    pub(crate) prefetch_done: bool,
-    /// Whether folder prefetch is pending (waiting for folder list)
-    pub(crate) folder_prefetch_pending: bool,
+    /// Email body prefetching state
+    pub(crate) prefetch: PrefetchState,
     /// Stack of undoable actions (most recent first)
     pub(crate) undo_stack: Vec<UndoEntry>,
     /// Pending deletions waiting to be executed (delayed by 10 seconds)
@@ -154,11 +171,7 @@ impl App {
             accounts,
             state,
             bindings,
-            last_prefetch_uid: None,
-            pending_prefetch: None,
-            in_flight_fetches: HashSet::new(),
-            prefetch_done: false,
-            folder_prefetch_pending: false,
+            prefetch: PrefetchState::default(),
             undo_stack: Vec::new(),
             pending_deletions: Vec::new(),
             last_search_input: None,
@@ -287,9 +300,7 @@ impl App {
         self.state.thread.selected_in_thread = 0;
         self.state.reader.scroll = 0;
         self.state.clear_search();
-        self.in_flight_fetches.clear();
-        self.last_prefetch_uid = None;
-        self.pending_prefetch = None;
+        self.prefetch.clear();
 
         // Update other accounts info for status bar
         self.refresh_other_accounts_info();

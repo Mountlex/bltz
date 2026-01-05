@@ -8,6 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
+use super::components::centered_rect_constrained;
 use super::theme::{Theme, with_selection_bg};
 use super::widgets::{error_bar, help_bar, truncate_string};
 use crate::app::state::AppState;
@@ -188,13 +189,7 @@ fn render_contact_edit_popup(frame: &mut Frame, area: Rect, state: &AppState) {
     };
 
     // Calculate popup size and position
-    let popup_width = 50.min(area.width.saturating_sub(4)).max(30);
-    let popup_height = 7;
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = centered_rect_constrained(area, 30, 50, 7, 7);
 
     // Clear the area behind the popup
     frame.render_widget(Clear, popup_area);

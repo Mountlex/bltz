@@ -2,13 +2,14 @@ use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
     style::Modifier,
-    text::{Line, Span, Text},
+    text::Text,
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
+use super::components::{render_email_headers, render_quoted_text};
 use super::theme::Theme;
 use super::widgets::{
-    StatusInfo, enhanced_status_bar, error_bar, format_date, help_bar, sanitize_text, spinner_char,
+    StatusInfo, enhanced_status_bar, error_bar, help_bar, sanitize_text, spinner_char,
 };
 use crate::app::state::AppState;
 use crate::mail::types::Attachment;
@@ -45,41 +46,13 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
         ])
         .split(frame.area());
 
-    // Enhanced status bar (same as inbox)
-    let folder_name = if state.folder.current.is_empty() {
-        "INBOX"
-    } else {
-        &state.folder.current
-    };
-    let status_info = StatusInfo {
-        folder: folder_name,
-        unread: state.unread_count,
-        total: state.total_count,
-        connected: state.connection.connected,
-        loading: state.status.loading,
-        last_sync: state.connection.last_sync,
-        account: if state.connection.account_name.is_empty() {
-            "Not connected"
-        } else {
-            &state.connection.account_name
-        },
-        search_query: None, // Reader doesn't show search
-        search_results: 0,
-        status_message: if state.status.message.is_empty() {
-            None
-        } else {
-            Some(&state.status.message)
-        },
-        other_accounts: &state.connection.other_accounts,
-        starred_view: state.is_starred_view(),
-        conversation_mode: state.conversation_mode,
-        has_error: state.has_unacknowledged_error(),
-    };
+    // Enhanced status bar (same as inbox, but without search)
+    let status_info = StatusInfo::from_state(state, None);
     enhanced_status_bar(frame, chunks[0], &status_info);
 
     if let Some(email) = email {
         // Headers
-        render_headers(frame, chunks[1], email);
+        render_email_headers(frame, chunks[1], email, false, false);
 
         // Attachments
         if show_attachments {
@@ -141,62 +114,6 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
         };
         help_bar(frame, chunks[4], hints);
     }
-}
-
-fn render_headers(
-    frame: &mut Frame,
-    area: ratatui::layout::Rect,
-    email: &crate::mail::types::EmailHeader,
-) {
-    let block = Block::default()
-        .borders(Borders::BOTTOM)
-        .border_style(Theme::border());
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let label_style = Theme::label();
-    let value_style = Theme::text();
-
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled("From:    ", label_style),
-            Span::styled(
-                format!(
-                    "{} <{}>",
-                    email.from_name.as_deref().unwrap_or(""),
-                    email.from_addr
-                ),
-                value_style,
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("To:      ", label_style),
-            Span::styled(email.to_addr.as_deref().unwrap_or(""), value_style),
-        ]),
-    ];
-
-    // Add CC line if present and non-empty
-    if let Some(ref cc) = email.cc_addr
-        && !cc.trim().is_empty()
-    {
-        lines.push(Line::from(vec![
-            Span::styled("Cc:      ", label_style),
-            Span::styled(cc.as_str(), value_style),
-        ]));
-    }
-
-    lines.push(Line::from(vec![
-        Span::styled("Date:    ", label_style),
-        Span::styled(format_date(email.date), value_style),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("Subject: ", label_style),
-        Span::styled(&email.subject, Theme::text_unread()),
-    ]));
-
-    let paragraph = Paragraph::new(lines);
-    frame.render_widget(paragraph, inner);
 }
 
 fn render_attachment_indicator(frame: &mut Frame, area: ratatui::layout::Rect, count: usize) {
@@ -302,37 +219,7 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
     let sanitized = sanitize_text(&body_text);
 
     // Build styled text with visual quote bars for quoted lines
-    // Alternating colors for nested quotes: cyan, yellow, magenta, green
-    let quote_colors = [
-        Theme::text_accent(),      // Cyan - level 1
-        Theme::star_indicator(),   // Yellow - level 2
-        Theme::unread_indicator(), // Magenta - level 3
-        Theme::text_success(),     // Green - level 4
-    ];
-
-    let lines: Vec<Line> = sanitized
-        .lines()
-        .map(|line| {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with('>') {
-                // Count quote depth (number of leading > characters)
-                let depth = trimmed.chars().take_while(|&c| c == '>').count().min(4);
-                // Build quote bar spans with alternating colors
-                let mut spans: Vec<Span> = Vec::with_capacity(depth + 1);
-                for i in 0..depth {
-                    let color_idx = i % quote_colors.len();
-                    spans.push(Span::styled("│ ", quote_colors[color_idx]));
-                }
-                // Strip leading > characters and spaces
-                let content = trimmed.trim_start_matches('>').trim_start();
-                spans.push(Span::styled(content, Theme::text_muted()));
-                Line::from(spans)
-            } else {
-                Line::raw(line)
-            }
-        })
-        .collect();
-
+    let lines = render_quoted_text(&sanitized);
     let text = Text::from(lines);
 
     let paragraph = Paragraph::new(text)

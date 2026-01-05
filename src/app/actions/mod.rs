@@ -224,9 +224,7 @@ impl App {
 
         // Clear reader/prefetch state since email list will change
         self.state.reader.set_body(None);
-        self.last_prefetch_uid = None;
-        self.pending_prefetch = None;
-        self.in_flight_fetches.clear();
+        self.prefetch.clear();
 
         self.reload_from_cache().await;
 

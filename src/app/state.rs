@@ -332,6 +332,28 @@ pub struct ConnectionState {
     pub account_names: Vec<String>,
 }
 
+impl FolderState {
+    /// Returns display name, defaulting to "INBOX" if empty
+    pub fn display_name(&self) -> &str {
+        if self.current.is_empty() {
+            "INBOX"
+        } else {
+            &self.current
+        }
+    }
+}
+
+impl ConnectionState {
+    /// Returns display account name, defaulting to "Not connected" if empty
+    pub fn display_account(&self) -> &str {
+        if self.account_name.is_empty() {
+            "Not connected"
+        } else {
+            &self.account_name
+        }
+    }
+}
+
 /// AI polish state
 #[derive(Debug, Clone, Default)]
 pub struct PolishState {

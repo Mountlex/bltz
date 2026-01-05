@@ -12,6 +12,7 @@ use crate::app::state::AppState;
 use crate::command::{CommandHelp, CommandResult, PendingCommand};
 use crate::input::KeybindingEntry;
 
+use super::super::components::centered_rect_constrained;
 use super::super::theme::{Theme, colors, symbols};
 
 pub fn render_command_bar(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -60,14 +61,8 @@ pub fn render_confirm_modal(frame: &mut Frame, area: Rect, pending: &PendingComm
         ),
     };
 
-    // Calculate popup size
-    let popup_width = 50.min(area.width.saturating_sub(4)).max(30);
-    let popup_height = 9.min(area.height.saturating_sub(4)).max(7);
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    // Calculate popup size and position
+    let popup_area = centered_rect_constrained(area, 30, 50, 7, 9);
 
     // Clear the area behind the popup
     frame.render_widget(Clear, popup_area);
@@ -100,16 +95,9 @@ pub fn render_confirm_modal(frame: &mut Frame, area: Rect, pending: &PendingComm
 
 /// Render a folder picker overlay
 pub fn render_folder_picker(frame: &mut Frame, area: Rect, state: &AppState) {
-    // Calculate popup size and position (min 10 chars wide for usability)
-    let popup_width = 30.min(area.width.saturating_sub(4)).max(10);
-    let popup_height = (state.folder.list.len() as u16 + 2)
-        .min(area.height.saturating_sub(4))
-        .max(3);
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    // Calculate popup size and position
+    let max_height = state.folder.list.len() as u16 + 2;
+    let popup_area = centered_rect_constrained(area, 10, 30, 3, max_height);
 
     // Clear the area behind the popup
     frame.render_widget(Clear, popup_area);
@@ -188,16 +176,9 @@ pub fn render_unified_help_popup(
     let keybinding_lines = keys.len() + keybinding_category_count * 2;
     let command_lines = commands.len() + 2; // header + blank line + entries
     let content_height = keybinding_lines + command_lines + 1; // +1 for blank line separator
+    let max_height = content_height as u16 + 2;
 
-    let popup_width = 50.min(area.width.saturating_sub(4)).max(36);
-    let popup_height = (content_height as u16 + 2)
-        .min(area.height.saturating_sub(4))
-        .max(10);
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = centered_rect_constrained(area, 36, 50, 10, max_height);
 
     // Clear the area behind the popup
     frame.render_widget(Clear, popup_area);
