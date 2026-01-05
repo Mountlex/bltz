@@ -1,15 +1,17 @@
 use std::time::Instant;
 
 use crate::config::AccountConfig;
-use crate::mail::ImapActorHandle;
+use crate::mail::{FolderMonitorHandle, ImapActorHandle};
 
 /// Per-account state and handles
 #[allow(dead_code)]
 pub struct AccountHandle {
     /// Account configuration
     pub config: AccountConfig,
-    /// IMAP actor handle for this account
+    /// IMAP actor handle for this account (main actor - handles commands + IDLE on current folder)
     pub imap_handle: ImapActorHandle,
+    /// Optional folder monitors for multi-folder IDLE (e.g., Sent folder)
+    pub folder_monitors: Vec<FolderMonitorHandle>,
     /// Account identifier (email address)
     pub account_id: String,
     /// Whether the IMAP connection is established
@@ -32,6 +34,7 @@ impl AccountHandle {
         Self {
             config,
             imap_handle,
+            folder_monitors: Vec::new(),
             account_id,
             connected: false,
             unread_count: 0,
@@ -39,6 +42,35 @@ impl AccountHandle {
             has_new_mail: false,
             last_sync: None,
             last_error: None,
+        }
+    }
+
+    /// Create with folder monitors for multi-folder IDLE
+    #[allow(dead_code)]
+    pub fn with_monitors(
+        config: AccountConfig,
+        imap_handle: ImapActorHandle,
+        folder_monitors: Vec<FolderMonitorHandle>,
+    ) -> Self {
+        let account_id = config.email.clone();
+        Self {
+            config,
+            imap_handle,
+            folder_monitors,
+            account_id,
+            connected: false,
+            unread_count: 0,
+            unread_since_viewed: 0,
+            has_new_mail: false,
+            last_sync: None,
+            last_error: None,
+        }
+    }
+
+    /// Shutdown folder monitors
+    pub async fn shutdown_monitors(&self) {
+        for monitor in &self.folder_monitors {
+            monitor.shutdown().await;
         }
     }
 

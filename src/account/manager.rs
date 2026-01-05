@@ -4,17 +4,19 @@ use std::sync::Arc;
 use crate::cache::Cache;
 use crate::config::{AccountConfig, AuthMethod, Config};
 use crate::credentials::CredentialStore;
-use crate::mail::{ImapClient, ImapCommand, ImapEvent, spawn_imap_actor};
+use crate::mail::{ImapClient, ImapCommand, ImapEvent, spawn_folder_monitor, spawn_imap_actor};
 
 use super::AccountHandle;
 
-/// Event from any account, tagged with account index
+/// Event from any account, tagged with account index and optionally folder
 #[derive(Debug)]
 pub struct AccountEvent {
     /// Index of the account that generated this event
     pub account_index: usize,
     /// The IMAP event
     pub event: ImapEvent,
+    /// Source folder (Some for monitor events, None for main actor)
+    pub folder: Option<String>,
 }
 
 /// Manages multiple email accounts with parallel IMAP connections
@@ -23,6 +25,8 @@ pub struct AccountManager {
     handles: Vec<AccountHandle>,
     /// Currently active account index
     active_index: usize,
+    /// Cache reference for spawning folder monitors
+    cache: Arc<Cache>,
 }
 
 impl AccountManager {
@@ -44,6 +48,7 @@ impl AccountManager {
         Ok(Self {
             handles,
             active_index,
+            cache,
         })
     }
 
@@ -85,6 +90,73 @@ impl AccountManager {
         let imap_handle = spawn_imap_actor(imap_client, cache, account_id);
 
         Ok(AccountHandle::new(config, imap_handle))
+    }
+
+    /// Spawn a folder monitor for a specific account
+    /// Returns true if the monitor was spawned, false if already monitoring that folder
+    pub async fn spawn_folder_monitor(
+        &mut self,
+        account_index: usize,
+        folder: &str,
+    ) -> Result<bool> {
+        let handle = self
+            .handles
+            .get_mut(account_index)
+            .ok_or_else(|| anyhow::anyhow!("Invalid account index: {}", account_index))?;
+
+        // Check if we're already monitoring this folder
+        if handle.folder_monitors.iter().any(|m| m.folder == folder) {
+            return Ok(false);
+        }
+
+        let config = &handle.config;
+        let credentials = CredentialStore::new(&config.email);
+
+        // Get credentials based on auth method
+        let password = match &config.auth {
+            AuthMethod::Password => credentials.get_imap_password()?,
+            AuthMethod::OAuth2 { client_id, .. } => {
+                let refresh_token = credentials.get_oauth2_refresh_token().map_err(|e| {
+                    anyhow::anyhow!(
+                        "OAuth2 refresh token not found: {}. Please re-authenticate.",
+                        e
+                    )
+                })?;
+
+                crate::oauth2::get_access_token(client_id, &refresh_token)
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "Failed to refresh OAuth2 access token: {}. Please re-authenticate.",
+                            e
+                        )
+                    })?
+            }
+        };
+
+        let imap_client = ImapClient::new(
+            config.imap.clone(),
+            config.email.clone(),
+            password,
+            config.auth.clone(),
+        );
+
+        let account_id = config.email.clone();
+        let monitor_handle = spawn_folder_monitor(
+            imap_client,
+            Arc::clone(&self.cache),
+            account_id,
+            folder.to_string(),
+        );
+
+        tracing::info!(
+            "Spawned folder monitor for '{}' on account '{}'",
+            folder,
+            handle.account_id
+        );
+
+        handle.folder_monitors.push(monitor_handle);
+        Ok(true)
     }
 
     /// Get the number of accounts
@@ -182,11 +254,12 @@ impl AccountManager {
     }
 
     /// Poll for events from all accounts (non-blocking)
-    /// Returns events tagged with their account index
+    /// Returns events tagged with their account index and optionally folder
     pub fn poll_events(&mut self) -> Vec<AccountEvent> {
         let mut events = Vec::new();
 
         for (index, handle) in self.handles.iter_mut().enumerate() {
+            // Poll main IMAP actor events
             while let Ok(event) = handle.imap_handle.event_rx.try_recv() {
                 // Update handle state based on event
                 match &event {
@@ -209,7 +282,47 @@ impl AccountManager {
                 events.push(AccountEvent {
                     account_index: index,
                     event,
+                    folder: None, // Main actor - no specific folder
                 });
+            }
+
+            // Poll folder monitor events
+            for monitor in &mut handle.folder_monitors {
+                while let Ok(folder_event) = monitor.event_rx.try_recv() {
+                    // Update handle state for monitor events too
+                    match &folder_event.event {
+                        ImapEvent::NewMail { count } => {
+                            // New mail in monitored folder (e.g., Sent)
+                            // Don't update new_mail badge for Sent folder
+                            tracing::debug!(
+                                "New mail in monitored folder '{}': {} emails",
+                                folder_event.folder,
+                                count
+                            );
+                        }
+                        ImapEvent::SyncComplete { new_count, .. } => {
+                            tracing::debug!(
+                                "Sync complete for monitored folder '{}': {} new",
+                                folder_event.folder,
+                                new_count
+                            );
+                        }
+                        ImapEvent::Error(msg) => {
+                            tracing::warn!(
+                                "Error in monitored folder '{}': {}",
+                                folder_event.folder,
+                                msg
+                            );
+                        }
+                        _ => {}
+                    }
+
+                    events.push(AccountEvent {
+                        account_index: index,
+                        event: folder_event.event,
+                        folder: Some(folder_event.folder),
+                    });
+                }
             }
         }
 
@@ -249,9 +362,13 @@ impl AccountManager {
         }
     }
 
-    /// Shutdown all IMAP actors
+    /// Shutdown all IMAP actors and folder monitors
     pub async fn shutdown(&self) {
         for handle in &self.handles {
+            // Shutdown folder monitors first
+            handle.shutdown_monitors().await;
+
+            // Then shutdown main IMAP actor
             handle
                 .imap_handle
                 .cmd_tx

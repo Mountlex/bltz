@@ -4,9 +4,11 @@
 //! - `mod.rs` - Types, structs, enums, and public API
 //! - `client.rs` - Connection, fetch, folder, and flag operations
 //! - `actor.rs` - Actor loop, command dispatch, and sync operations
+//! - `monitor.rs` - Lightweight folder monitors for multi-folder IDLE
 
 mod actor;
 mod client;
+mod monitor;
 
 use async_native_tls::TlsStream;
 use tokio::net::TcpStream;
@@ -19,6 +21,7 @@ use super::types::{Attachment, EmailBody, EmailFlags, EmailHeader};
 
 // Re-export public API
 pub use actor::spawn_imap_actor;
+pub use monitor::{FolderMonitorEvent, FolderMonitorHandle, spawn_folder_monitor};
 
 /// XOAUTH2 authenticator for IMAP
 pub(crate) struct XOAuth2Authenticator {

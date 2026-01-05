@@ -102,6 +102,14 @@ impl App {
                 account_event.event
             );
 
+            // Handle folder monitor events separately (early filter)
+            if let Some(ref folder) = account_event.folder {
+                self.handle_folder_monitor_event(is_active, folder, &account_event.event)
+                    .await;
+                continue;
+            }
+
+            // Main actor events only below (folder is always None)
             match account_event.event {
                 ImapEvent::Connected => {
                     tracing::info!(
@@ -317,6 +325,20 @@ impl App {
                             self.folder_prefetch_pending = false;
                             self.schedule_folder_prefetch();
                         }
+
+                        // Spawn folder monitor for Sent folder if conversation mode is enabled
+                        if self.state.conversation_mode
+                            && let Some(sent_folder) = self.find_sent_folder()
+                        {
+                            let account_idx = self.accounts.active_index();
+                            if let Err(e) = self
+                                .accounts
+                                .spawn_folder_monitor(account_idx, &sent_folder)
+                                .await
+                            {
+                                tracing::warn!("Failed to spawn Sent folder monitor: {}", e);
+                            }
+                        }
                     }
                 }
                 ImapEvent::FolderSelected { folder } => {
@@ -378,6 +400,37 @@ impl App {
         self.refresh_other_accounts_info();
 
         had_events
+    }
+
+    /// Handle events from folder monitors (e.g., Sent folder).
+    /// These are handled separately to avoid affecting main UI state.
+    async fn handle_folder_monitor_event(
+        &mut self,
+        is_active: bool,
+        folder: &str,
+        event: &ImapEvent,
+    ) {
+        let is_sent = folder.to_lowercase().contains("sent");
+
+        match event {
+            ImapEvent::SyncComplete { .. } => {
+                // Reload for Sent folder in conversation mode to update threads
+                if is_sent
+                    && is_active
+                    && self.state.conversation_mode
+                    && self.state.folder.current == "INBOX"
+                {
+                    tracing::debug!("Sent folder synced, refreshing conversation threads");
+                    self.reload_from_cache().await;
+                }
+            }
+            ImapEvent::Error(e) => {
+                tracing::warn!("Folder monitor '{}' error: {}", folder, e);
+            }
+            _ => {
+                tracing::debug!("Folder monitor '{}' event: {:?}", folder, event);
+            }
+        }
     }
 
     /// Process events from the AI actor (non-blocking). Returns true if any events were processed.

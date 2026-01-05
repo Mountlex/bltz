@@ -763,7 +763,8 @@ impl ImapClient {
         self.sync_folder_internal(cache, account_id, "INBOX").await
     }
 
-    /// Sync the specified folder (or currently selected folder)
+    /// Sync the specified folder (or currently selected folder).
+    /// This is exposed for use by folder monitors.
     pub async fn sync_current_folder(
         &mut self,
         cache: &Cache,
