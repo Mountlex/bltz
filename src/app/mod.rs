@@ -2,19 +2,16 @@
 
 mod actions;
 mod event_loop;
+pub mod render_thread;
 pub mod state;
 pub mod undo;
 
 use anyhow::Result;
-use crossterm::{
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
-use ratatui::{Terminal, backend::CrosstermBackend};
 use std::collections::HashSet;
-use std::io;
 use std::sync::Arc;
 use std::time::Instant;
+
+use render_thread::RenderThread;
 
 use crate::account::AccountManager;
 use crate::ai::{AiActorHandle, OpenRouterClient, spawn_ai_actor};
@@ -181,25 +178,20 @@ impl App {
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        // Setup terminal
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+        // Spawn background render thread (owns terminal setup/teardown)
+        let render_thread = RenderThread::spawn()?;
 
         // Initial state - actor is connecting
         self.state.set_status("Connecting...");
 
         // Run event loop
-        let result = self.event_loop(&mut terminal).await;
+        let result = self.event_loop(&render_thread).await;
 
         // Flush any pending deletions before shutdown
         self.flush_pending_deletions().await;
 
-        // Cleanup terminal
-        disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+        // Shutdown render thread (handles terminal cleanup)
+        render_thread.shutdown();
 
         // Shutdown all IMAP actors
         self.accounts.shutdown().await;

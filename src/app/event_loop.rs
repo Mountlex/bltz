@@ -2,8 +2,6 @@
 
 use anyhow::Result;
 use crossterm::event;
-use ratatui::{Terminal, backend::CrosstermBackend};
-use std::io;
 use std::time::{Duration, Instant};
 
 use crate::app::state::{ModalState, View};
@@ -14,18 +12,26 @@ use crate::mail::{
     ImapCommand, ImapEvent, folder_cache_key, group_into_threads, merge_into_threads,
 };
 
+use super::render_thread::RenderThread;
 use super::{App, EMAIL_PAGE_SIZE};
 
 impl App {
-    pub(crate) async fn event_loop(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    ) -> Result<()> {
+    pub(crate) async fn event_loop(&mut self, render_thread: &RenderThread) -> Result<()> {
         // Schedule prefetch for the first email (will be processed after debounce)
         self.schedule_prefetch().await;
 
         loop {
-            // Clear expired errors before render
+            // Process IMAP events FIRST (non-blocking) - prioritize responsiveness
+            if self.process_imap_events().await {
+                self.dirty = true;
+            }
+
+            // Process AI events from the actor (non-blocking)
+            if self.process_ai_events() {
+                self.dirty = true;
+            }
+
+            // Clear expired errors
             if self.state.clear_error_if_expired() {
                 self.dirty = true;
             }
@@ -35,9 +41,9 @@ impl App {
                 self.dirty = true;
             }
 
-            // Render only when dirty (skip if nothing changed)
+            // Render only when dirty (non-blocking - sends to render thread)
             if self.dirty {
-                terminal.draw(|f| crate::ui::render(f, &self.state))?;
+                render_thread.render(self.state.clone());
                 self.dirty = false;
             }
 
@@ -70,16 +76,6 @@ impl App {
                     InputResult::Backspace => self.handle_backspace().await,
                     InputResult::Continue => {}
                 }
-            }
-
-            // Process IMAP events from the actor (non-blocking)
-            if self.process_imap_events().await {
-                self.dirty = true;
-            }
-
-            // Process AI events from the actor (non-blocking)
-            if self.process_ai_events() {
-                self.dirty = true;
             }
 
             // Load more emails if user is near the bottom of the list
@@ -355,7 +351,8 @@ impl App {
                     data,
                 } => {
                     if is_active {
-                        self.handle_attachment_fetched(uid, attachment_index, attachment, data);
+                        self.handle_attachment_fetched(uid, attachment_index, attachment, data)
+                            .await;
                     }
                 }
                 ImapEvent::AttachmentFetchFailed {

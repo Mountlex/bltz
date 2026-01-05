@@ -164,7 +164,7 @@ impl App {
     }
 
     /// Handle attachment fetched event
-    pub(crate) fn handle_attachment_fetched(
+    pub(crate) async fn handle_attachment_fetched(
         &mut self,
         uid: u32,
         attachment_index: usize,
@@ -223,9 +223,7 @@ impl App {
         if uid_matches && self.state.reader.attachments.is_empty() {
             // Try to reload from cache now that raw message should be cached
             let cache_key = self.cache_key_for_uid(uid);
-            if let Ok(Some(raw)) =
-                futures::executor::block_on(self.cache.get_raw_message(&cache_key, uid))
-            {
+            if let Ok(Some(raw)) = self.cache.get_raw_message(&cache_key, uid).await {
                 self.state.reader.attachments = parse_attachments(&raw);
             }
         }
