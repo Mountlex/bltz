@@ -100,6 +100,7 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
     // Phase 4: Build items ONLY for visible threads
     let mut items: Vec<ListItem> = Vec::with_capacity(visible_lines + 4);
     let mut current_line = thread_line_offsets[first_visible_thread];
+    let mut first_added_line: Option<usize> = None;
 
     for (thread_idx, thread) in visible.iter().enumerate().skip(first_visible_thread) {
         // Stop if we've gone past the visible area
@@ -118,6 +119,9 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
 
             // Only render if visible
             if current_line + 2 > scroll_offset {
+                if first_added_line.is_none() {
+                    first_added_line = Some(current_line);
+                }
                 let header_items = render_thread_header(
                     thread,
                     &state.emails,
@@ -137,6 +141,9 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
                     break;
                 }
                 if current_line + 2 > scroll_offset {
+                    if first_added_line.is_none() {
+                        first_added_line = Some(current_line);
+                    }
                     let is_email_selected =
                         is_current_thread && state.thread.selected_in_thread == email_idx + 1;
                     let email_match_type = state.get_match_type(email.uid);
@@ -154,6 +161,9 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
         } else {
             // Collapsed thread - 2 lines
             if current_line + 2 > scroll_offset {
+                if first_added_line.is_none() {
+                    first_added_line = Some(current_line);
+                }
                 let is_selected = is_current_thread;
                 let latest_email = thread.latest(&state.emails);
                 let match_type = state.get_match_type(latest_email.uid);
@@ -173,7 +183,11 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
     }
 
     // Skip items before scroll_offset (for partially visible threads at top)
-    let skip_lines = scroll_offset.saturating_sub(thread_line_offsets[first_visible_thread]);
+    // Use first_added_line instead of thread start to avoid over-skipping when
+    // a thread's header is above the viewport but its emails are visible
+    let skip_lines = first_added_line
+        .map(|first| scroll_offset.saturating_sub(first))
+        .unwrap_or(0);
     let visible_items: Vec<ListItem> = items
         .into_iter()
         .skip(skip_lines)
