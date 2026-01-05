@@ -10,9 +10,9 @@ mod actor;
 mod client;
 mod monitor;
 
-use async_native_tls::TlsStream;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
+use tokio_rustls::client::TlsStream;
 use tokio_util::compat::Compat;
 
 use crate::config::{AuthMethod, ImapConfig};
@@ -146,7 +146,7 @@ pub enum ImapEvent {
     Error(String),
 }
 
-pub(crate) type ImapSession = async_imap::Session<TlsStream<Compat<TcpStream>>>;
+pub(crate) type ImapSession = async_imap::Session<Compat<TlsStream<TcpStream>>>;
 
 pub struct ImapClient {
     pub(crate) session: Option<ImapSession>,

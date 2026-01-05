@@ -192,6 +192,7 @@ impl App {
                     }
 
                     // Send desktop notification
+                    #[cfg(feature = "notifications")]
                     if let Some(handle) = self.accounts.get(account_event.account_index) {
                         crate::notification::notify_new_mail(
                             &self.config,

@@ -9,6 +9,7 @@ mod contacts;
 mod credentials;
 mod input;
 mod mail;
+#[cfg(feature = "notifications")]
 mod notification;
 mod oauth2;
 mod ui;

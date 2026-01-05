@@ -16,8 +16,9 @@ impl ImapClient {
     //
 
     pub async fn connect(&mut self) -> Result<()> {
-        use async_native_tls::TlsConnector;
+        use std::sync::Arc;
         use tokio::net::TcpStream;
+        use tokio_rustls::TlsConnector;
         use tokio_util::compat::TokioAsyncReadCompatExt;
 
         let addr = format!("{}:{}", self.config.server, self.config.port);
@@ -26,16 +27,27 @@ impl ImapClient {
             .await
             .with_context(|| format!("Failed to connect to {}", addr))?;
 
-        // Wrap tokio stream with compat layer for futures-io compatibility
-        let tcp_compat = tcp.compat();
+        // Build rustls config with webpki root certificates
+        let root_store =
+            rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
 
-        let tls = TlsConnector::new();
-        let tls_stream = tls
-            .connect(&self.config.server, tcp_compat)
+        let connector = TlsConnector::from(Arc::new(config));
+        let server_name = self
+            .config
+            .server
+            .clone()
+            .try_into()
+            .context("Invalid server name")?;
+        let tls_stream = connector
+            .connect(server_name, tcp)
             .await
             .context("TLS handshake failed")?;
 
-        let client = async_imap::Client::new(tls_stream);
+        // Wrap with compat layer for futures-io compatibility (required by async-imap)
+        let client = async_imap::Client::new(tls_stream.compat());
 
         // Authenticate based on configured auth method
         let mut session = match &self.auth_method {

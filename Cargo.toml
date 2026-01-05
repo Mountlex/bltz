@@ -12,6 +12,10 @@ keywords = ["email", "terminal", "tui", "imap", "smtp"]
 categories = ["command-line-utilities", "email"]
 rust-version = "1.92"
 
+[features]
+default = ["notifications"]
+notifications = ["notify-rust"]
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "net", "signal", "io-util", "macros"] }
@@ -23,8 +27,10 @@ crossterm = "0.29"
 
 # Email protocols
 async-imap = "0.11"
-async-native-tls = "0.5"
-lettre = { version = "0.11", default-features = false, features = ["tokio1-native-tls", "smtp-transport", "builder"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1.0"
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
 
 # Email parsing
 mail-parser = "0.11"
@@ -70,8 +76,8 @@ html2text = "0.16"
 getrandom = "0.3"
 sha2 = "0.10"
 
-# Desktop notifications
-notify-rust = "4"
+# Desktop notifications (optional)
+notify-rust = { version = "4", optional = true }
 
 # Open URLs in browser
 open = "5"
