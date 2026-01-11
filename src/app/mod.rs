@@ -155,6 +155,7 @@ impl App {
                 Some(spawn_ai_actor(
                     client,
                     config.ai.summary_max_tokens,
+                    config.ai.thread_summary_max_tokens,
                     config.ai.polish_max_tokens,
                 ))
             } else {
@@ -324,6 +325,9 @@ impl App {
 
         // Go back to inbox view
         self.state.view = View::Inbox;
+
+        // Schedule prefetch for the selected email in the new account
+        self.schedule_prefetch().await;
     }
 
     /// Extract sender addresses from cached emails and add to contacts

@@ -137,6 +137,7 @@ impl App {
 
     pub(crate) async fn do_send(&mut self, email: ComposeEmail) {
         self.state.status.loading = true;
+        self.dirty = true;
         self.state.set_status("Sending...");
 
         // Determine which account to send from

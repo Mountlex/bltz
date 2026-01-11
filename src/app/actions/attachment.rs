@@ -65,6 +65,7 @@ impl App {
         // Need to fetch from server - send command and wait for event
         self.state.set_status("Loading attachments...");
         self.state.status.loading = true;
+        self.dirty = true;
 
         // Request the first attachment to trigger raw message fetch
         let folder = self.folder_for_uid(uid);
@@ -108,6 +109,7 @@ impl App {
         self.state
             .set_status(format!("Saving {}...", attachment.filename));
         self.state.status.loading = true;
+        self.dirty = true;
 
         // Request attachment data
         let folder = self.folder_for_uid(uid);
@@ -150,6 +152,7 @@ impl App {
         self.state
             .set_status(format!("Opening {}...", attachment.filename));
         self.state.status.loading = true;
+        self.dirty = true;
 
         // Request attachment data
         let folder = self.folder_for_uid(uid);

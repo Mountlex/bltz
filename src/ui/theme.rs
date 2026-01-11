@@ -59,7 +59,7 @@ pub mod colors {
 
     pub fn fg_muted() -> Color {
         match current_theme() {
-            ThemeVariant::Dark => Color::DarkGray,
+            ThemeVariant::Dark => Color::Gray,
             ThemeVariant::HighContrast => Color::Gray,
         }
     }

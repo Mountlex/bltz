@@ -61,6 +61,7 @@ pub struct AiActorHandle {
 pub fn spawn_ai_actor(
     client: OpenRouterClient,
     summary_max_tokens: u32,
+    thread_summary_max_tokens: u32,
     polish_max_tokens: u32,
 ) -> AiActorHandle {
     let (cmd_tx, cmd_rx) = mpsc::channel(16);
@@ -69,6 +70,7 @@ pub fn spawn_ai_actor(
     tokio::spawn(ai_actor_loop(
         client,
         summary_max_tokens,
+        thread_summary_max_tokens,
         polish_max_tokens,
         cmd_rx,
         event_tx,
@@ -80,6 +82,7 @@ pub fn spawn_ai_actor(
 async fn ai_actor_loop(
     client: OpenRouterClient,
     summary_max_tokens: u32,
+    thread_summary_max_tokens: u32,
     polish_max_tokens: u32,
     mut cmd_rx: mpsc::Receiver<AiCommand>,
     event_tx: mpsc::Sender<AiEvent>,
@@ -122,7 +125,7 @@ async fn ai_actor_loop(
                     client.complete(
                         prompts::THREAD_SUMMARY_SYSTEM,
                         &thread_content,
-                        summary_max_tokens,
+                        thread_summary_max_tokens,
                     )
                 })
                 .await;

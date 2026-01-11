@@ -204,9 +204,12 @@ pub struct AiConfig {
     /// Model to use (default: anthropic/claude-3-haiku)
     #[serde(default = "default_ai_model")]
     pub model: String,
-    /// Maximum tokens for summary responses
+    /// Maximum tokens for single email summary responses
     #[serde(default = "default_summary_max_tokens")]
     pub summary_max_tokens: u32,
+    /// Maximum tokens for thread summary responses (default: 600)
+    #[serde(default = "default_thread_summary_max_tokens")]
+    pub thread_summary_max_tokens: u32,
     /// Maximum tokens for polish responses
     #[serde(default = "default_polish_max_tokens")]
     pub polish_max_tokens: u32,
@@ -220,6 +223,7 @@ impl Default for AiConfig {
             enable_polish: false,
             model: default_ai_model(),
             summary_max_tokens: default_summary_max_tokens(),
+            thread_summary_max_tokens: default_thread_summary_max_tokens(),
             polish_max_tokens: default_polish_max_tokens(),
         }
     }
@@ -266,6 +270,10 @@ fn default_ai_model() -> String {
 
 fn default_summary_max_tokens() -> u32 {
     300
+}
+
+fn default_thread_summary_max_tokens() -> u32 {
+    600
 }
 
 fn default_polish_max_tokens() -> u32 {
@@ -671,6 +679,7 @@ mod tests {
         assert!(!ai.enable_polish);
         assert_eq!(ai.model, "anthropic/claude-3-haiku");
         assert_eq!(ai.summary_max_tokens, 300);
+        assert_eq!(ai.thread_summary_max_tokens, 600);
         assert_eq!(ai.polish_max_tokens, 2000);
     }
 

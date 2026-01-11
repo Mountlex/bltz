@@ -3,7 +3,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
@@ -13,7 +13,7 @@ use crate::constants::SCROLL_TARGET_FRACTION;
 use crate::mail::EmailThread;
 use crate::mail::types::EmailHeader;
 
-use super::super::theme::{Theme, symbols, with_selection_bg};
+use super::super::theme::{Theme, colors, symbols, with_selection_bg};
 use super::super::widgets::{display_width, format_relative_date, truncate_string};
 use super::format::highlight_matches;
 
@@ -400,7 +400,7 @@ pub fn render_thread_header(
 
     // Add [body] indicator if this is a body-only match
     if body_indicator {
-        let body_style = with_selection_bg(Style::default().fg(Color::DarkGray), selected);
+        let body_style = with_selection_bg(Style::default().fg(colors::fg_muted()), selected);
         line2_spans.push(Span::styled(body_indicator_str, body_style));
     }
 
@@ -618,7 +618,7 @@ pub fn render_thread_email(
 
     // Add [body] indicator if this is a body-only match
     if body_indicator {
-        let body_style = with_selection_bg(Style::default().fg(Color::DarkGray), selected);
+        let body_style = with_selection_bg(Style::default().fg(colors::fg_muted()), selected);
         line2_spans.push(Span::styled(body_indicator_str, body_style));
     }
 

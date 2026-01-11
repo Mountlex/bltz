@@ -58,7 +58,15 @@ impl App {
             }
 
             // Handle input (adaptive timeout: faster when loading or pending prefetch)
-            let poll_timeout = if self.state.status.loading || self.prefetch.pending.is_some() {
+            let is_loading = self.state.status.loading
+                || self.state.reader.summary_loading
+                || self
+                    .state
+                    .polish
+                    .preview
+                    .as_ref()
+                    .is_some_and(|p| p.loading);
+            let poll_timeout = if is_loading || self.prefetch.pending.is_some() {
                 50
             } else {
                 150
@@ -83,6 +91,9 @@ impl App {
                     }
                     InputResult::Continue => {}
                 }
+            } else if is_loading {
+                // Force re-render when loading to animate spinner
+                self.dirty = true;
             }
 
             // Load more emails if user is near the bottom of the list

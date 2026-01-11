@@ -65,7 +65,7 @@ impl App {
                         },
                     ) {
                         Ok(_) => {
-                            self.state.status.loading = true;
+                            // Don't set loading for background prefetch - it should be invisible
                             self.prefetch.in_flight.insert(current_uid);
                         }
                         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {

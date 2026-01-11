@@ -96,6 +96,7 @@ impl App {
                 self.state.reader.set_body(Some(body));
                 self.state.status.loading = false;
                 self.state.clear_error();
+                self.dirty = true;
             }
             View::Inbox => {
                 // For inbox preview, check if this is the currently selected email
@@ -104,6 +105,7 @@ impl App {
                 {
                     self.state.reader.set_body(Some(body));
                     self.state.status.loading = false;
+                    self.dirty = true;
                 }
             }
             _ => {}

@@ -65,6 +65,7 @@ impl App {
         let Some(ref ai) = self.ai_actor else { return };
 
         self.state.reader.summary_loading = true;
+        self.dirty = true;
         self.state.set_status("Generating summary...");
 
         let _ = ai
@@ -131,6 +132,7 @@ impl App {
         let Some(ref ai) = self.ai_actor else { return };
 
         self.state.reader.summary_loading = true;
+        self.dirty = true;
         self.state.reader.show_summary = true;
         self.state.set_status("Generating thread summary...");
 
@@ -178,6 +180,7 @@ impl App {
             polished: String::new(),
             loading: true,
         });
+        self.dirty = true;
         self.state.set_status("Polishing text...");
 
         let _ = ai.cmd_tx.send(AiCommand::Polish { original: body }).await;

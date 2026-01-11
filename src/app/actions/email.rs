@@ -74,6 +74,7 @@ impl App {
                 .clone()
                 .unwrap_or_else(|| self.state.folder.current.clone());
             self.state.status.loading = true;
+            self.dirty = true;
             if let Err(e) = self
                 .accounts
                 .send_command(ImapCommand::FetchBody { uid, folder })
@@ -159,6 +160,7 @@ impl App {
             // Request folder list if we don't have it
             if self.state.folder.list.is_empty() && !self.state.status.loading {
                 self.state.status.loading = true;
+                self.dirty = true;
                 self.state.set_status("Loading folders...");
                 if let Err(e) = self.accounts.send_command(ImapCommand::ListFolders).await {
                     tracing::debug!("Failed to send ListFolders command: {}", e);
@@ -190,6 +192,7 @@ impl App {
         {
             if folder != self.state.folder.current {
                 self.state.status.loading = true;
+                self.dirty = true;
                 self.state.set_status(format!("Switching to {}...", folder));
 
                 // Set current folder FIRST (cache_key() depends on this)
