@@ -70,6 +70,7 @@ mod tests {
     fn test_account(notifications: Option<bool>) -> AccountConfig {
         AccountConfig {
             email: "test@example.com".to_string(),
+            username: None,
             display_name: Some("Test Account".to_string()),
             imap: ImapConfig {
                 server: "imap.example.com".to_string(),

@@ -85,7 +85,7 @@ impl AccountManager {
 
         let imap_client = ImapClient::new(
             config.imap.clone(),
-            config.email.clone(),
+            config.username_or_email().to_string(),
             password,
             config.auth.clone(),
         );
@@ -118,7 +118,7 @@ impl AccountManager {
 
         let imap_client = ImapClient::new(
             config.imap.clone(),
-            config.email.clone(),
+            config.username_or_email().to_string(),
             password,
             config.auth.clone(),
         );
@@ -153,12 +153,24 @@ impl AccountManager {
 
     /// Get the active account handle
     pub fn active(&self) -> &AccountHandle {
+        debug_assert!(
+            self.active_index < self.handles.len(),
+            "active_index {} out of bounds (len: {})",
+            self.active_index,
+            self.handles.len()
+        );
         &self.handles[self.active_index]
     }
 
     /// Get mutable reference to active account handle
     #[allow(dead_code)]
     pub fn active_mut(&mut self) -> &mut AccountHandle {
+        debug_assert!(
+            self.active_index < self.handles.len(),
+            "active_index {} out of bounds (len: {})",
+            self.active_index,
+            self.handles.len()
+        );
         &mut self.handles[self.active_index]
     }
 

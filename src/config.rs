@@ -71,6 +71,9 @@ pub enum AuthMethod {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountConfig {
     pub email: String,
+    /// Optional login username (defaults to email if not set)
+    #[serde(default)]
+    pub username: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
     pub imap: ImapConfig,
@@ -87,6 +90,11 @@ impl AccountConfig {
     /// Get the display name or fall back to email
     pub fn display_name_or_email(&self) -> &str {
         self.display_name.as_deref().unwrap_or(&self.email)
+    }
+
+    /// Get the login username or fall back to email
+    pub fn username_or_email(&self) -> &str {
+        self.username.as_deref().unwrap_or(&self.email)
     }
 }
 
@@ -456,6 +464,7 @@ mod tests {
             accounts: vec![
                 AccountConfig {
                     email: "first@example.com".to_string(),
+                    username: None,
                     display_name: None,
                     imap: ImapConfig {
                         server: "imap.example.com".to_string(),
@@ -472,6 +481,7 @@ mod tests {
                 },
                 AccountConfig {
                     email: "second@example.com".to_string(),
+                    username: None,
                     display_name: Some("Second".to_string()),
                     imap: ImapConfig {
                         server: "imap2.example.com".to_string(),

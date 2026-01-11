@@ -49,18 +49,16 @@ impl App {
         self.state.set_status(msg);
         self.state.clear_error();
 
-        // After first successful INBOX sync, prefetch common folders
+        // After first successful INBOX sync, prefetch common folders (for active account only)
         if !self.prefetch.folder_done && self.state.folder.current == "INBOX" {
             self.prefetch.folder_done = true;
-            // Request folder list first (needed for prefetch)
-            if self.state.folder.list.is_empty() {
-                self.prefetch.folder_pending = true;
-                self.accounts
-                    .send_command(ImapCommand::ListFolders)
-                    .await
-                    .ok();
-            } else {
+            // Folder list fetch is now triggered in event_loop for all accounts
+            // Just wait for it or schedule prefetch if we have the list
+            let account = self.accounts.active();
+            if !account.folder_list.is_empty() {
                 self.schedule_folder_prefetch();
+            } else {
+                self.prefetch.folder_pending = true;
             }
         }
     }

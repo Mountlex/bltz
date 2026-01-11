@@ -26,6 +26,8 @@ pub struct AccountHandle {
     pub last_sync: Option<Instant>,
     /// Last error message (if any)
     pub last_error: Option<String>,
+    /// Available folders for this account (populated from IMAP LIST)
+    pub folder_list: Vec<String>,
 }
 
 impl AccountHandle {
@@ -42,6 +44,7 @@ impl AccountHandle {
             has_new_mail: false,
             last_sync: None,
             last_error: None,
+            folder_list: Vec::new(),
         }
     }
 
@@ -64,6 +67,7 @@ impl AccountHandle {
             has_new_mail: false,
             last_sync: None,
             last_error: None,
+            folder_list: Vec::new(),
         }
     }
 

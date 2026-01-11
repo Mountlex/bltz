@@ -189,6 +189,7 @@ async fn run_setup() -> Result<()> {
     let config = Config {
         accounts: vec![config::AccountConfig {
             email: email.clone(),
+            username: None,
             display_name,
             imap: config::ImapConfig {
                 server: imap_server,

@@ -197,7 +197,7 @@ impl App {
 
         let smtp = match SmtpClient::new_with_auth(
             &account.smtp,
-            &account.email,
+            account.username_or_email(),
             &password,
             &account.email,
             account.display_name.as_deref(),

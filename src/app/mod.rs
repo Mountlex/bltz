@@ -216,17 +216,19 @@ impl App {
     async fn flush_pending_deletions(&mut self) {
         use crate::mail::ImapCommand;
 
-        let current_account = self.account_id().to_string();
         let pending: Vec<_> = self.pending_deletions.drain(..).collect();
 
         for pd in pending {
-            // Only delete if we're still on the same account
-            if pd.account_id == current_account {
+            // Route deletion to correct account (even if we switched accounts)
+            if let Some(account_idx) = self.accounts.index_of(&pd.account_id) {
                 self.accounts
-                    .send_command(ImapCommand::Delete {
-                        uid: pd.uid,
-                        folder: pd.folder,
-                    })
+                    .send_command_to(
+                        account_idx,
+                        ImapCommand::Delete {
+                            uid: pd.uid,
+                            folder: pd.folder,
+                        },
+                    )
                     .await
                     .ok();
             }
@@ -288,6 +290,15 @@ impl App {
         self.state.connection.account_name = account.display_name().to_string();
         self.state.connection.account_index = self.accounts.active_index();
         self.state.connection.connected = account.connected;
+
+        // Sync folder list from account handle to state
+        if !account.folder_list.is_empty() {
+            self.state.folder.list = account.folder_list.clone();
+        } else {
+            self.state.folder.list.clear();
+        }
+        // Reset folder selection state
+        self.state.folder.selected = 0;
 
         // Reload from cache FIRST to avoid visual flash
         // This loads new emails before we clear the selection state

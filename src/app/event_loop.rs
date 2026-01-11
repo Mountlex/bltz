@@ -144,6 +144,17 @@ impl App {
                         total,
                         full_sync
                     );
+                    // Request folder list for any account that doesn't have one yet
+                    if let Some(handle) = self.accounts.get(account_event.account_index)
+                        && handle.folder_list.is_empty()
+                    {
+                        handle
+                            .imap_handle
+                            .cmd_tx
+                            .try_send(ImapCommand::ListFolders)
+                            .ok();
+                    }
+                    // Process UI updates only for active account
                     if is_active {
                         self.handle_imap_sync_complete(new_count, total, full_sync)
                             .await;
@@ -186,6 +197,11 @@ impl App {
                     }
                 }
                 ImapEvent::FolderList { folders } => {
+                    // Always store in the originating account (not just active)
+                    if let Some(handle) = self.accounts.get_mut(account_event.account_index) {
+                        handle.folder_list = folders.clone();
+                    }
+                    // Only process UI updates if active
                     if is_active {
                         self.handle_imap_folder_list(folders).await;
                     }
@@ -533,12 +549,11 @@ impl App {
 
         let had_deletions = !to_execute.is_empty();
 
-        // Execute the deletions
+        // Execute the deletions (route to correct account even if we switched)
         for (uid, account_id, folder) in to_execute {
-            // Only delete if still on correct account
-            if account_id == self.account_id() {
+            if let Some(account_idx) = self.accounts.index_of(&account_id) {
                 self.accounts
-                    .send_command(ImapCommand::Delete { uid, folder })
+                    .send_command_to(account_idx, ImapCommand::Delete { uid, folder })
                     .await
                     .ok();
             }
