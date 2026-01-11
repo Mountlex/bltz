@@ -71,6 +71,7 @@ mod tests {
         AccountConfig {
             email: "test@example.com".to_string(),
             username: None,
+            name: None,
             display_name: Some("Test Account".to_string()),
             imap: ImapConfig {
                 server: "imap.example.com".to_string(),

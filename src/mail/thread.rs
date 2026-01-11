@@ -558,4 +558,152 @@ mod tests {
         let threads = group_into_threads(&emails);
         assert_eq!(threads.len(), 2);
     }
+
+    #[test]
+    fn test_empty_emails() {
+        let threads = group_into_threads(&[]);
+        assert!(threads.is_empty());
+    }
+
+    #[test]
+    fn test_single_email() {
+        let emails = vec![make_email(1, "Hello", Some("msg1@test"), None, 1000)];
+
+        let threads = group_into_threads(&emails);
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].total_count, 1);
+        assert_eq!(threads[0].latest_date, 1000);
+    }
+
+    #[test]
+    fn test_thread_sorted_by_date_descending() {
+        // Threads should be sorted by latest date descending
+        let emails = vec![
+            make_email(1, "Old thread", Some("old@test"), None, 1000),
+            make_email(2, "New thread", Some("new@test"), None, 5000),
+            make_email(3, "Middle thread", Some("mid@test"), None, 3000),
+        ];
+
+        let threads = group_into_threads(&emails);
+        assert_eq!(threads.len(), 3);
+        // Should be sorted by date descending
+        assert_eq!(threads[0].latest_date, 5000);
+        assert_eq!(threads[1].latest_date, 3000);
+        assert_eq!(threads[2].latest_date, 1000);
+    }
+
+    #[test]
+    fn test_thread_unread_count() {
+        let mut email1 = make_email(1, "Hello", Some("msg1@test"), None, 1000);
+        email1.flags = EmailFlags::SEEN; // Read
+
+        let email2 = make_email(2, "Re: Hello", Some("msg2@test"), Some("msg1@test"), 2000);
+        // email2 is unread (no SEEN flag)
+
+        let emails = vec![email1, email2];
+        let threads = group_into_threads(&emails);
+
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].unread_count, 1); // Only email2 is unread
+        assert!(threads[0].has_unread());
+    }
+
+    #[test]
+    fn test_thread_has_attachments() {
+        let email1 = make_email(1, "Hello", Some("msg1@test"), None, 1000);
+        let mut email2 = make_email(2, "Re: Hello", Some("msg2@test"), Some("msg1@test"), 2000);
+        email2.has_attachments = true;
+
+        let emails = vec![email1, email2];
+        let threads = group_into_threads(&emails);
+
+        assert_eq!(threads.len(), 1);
+        assert!(threads[0].has_attachments);
+    }
+
+    #[test]
+    fn test_subject_grouping_date_proximity() {
+        // Emails with same subject but far apart in time should be separate threads
+        let emails = vec![
+            make_email(1, "Weekly Report", None, None, 1000),
+            // More than 7 days later
+            make_email(
+                2,
+                "Weekly Report",
+                None,
+                None,
+                1000 + (8 * 24 * 60 * 60), // 8 days
+            ),
+        ];
+
+        let threads = group_into_threads(&emails);
+        // Should be 2 separate threads due to date gap
+        assert_eq!(threads.len(), 2);
+    }
+
+    #[test]
+    fn test_subject_grouping_within_proximity() {
+        // Emails with same subject within 7 days should be grouped
+        let emails = vec![
+            make_email(1, "Daily Standup", None, None, 1000),
+            make_email(
+                2,
+                "Re: Daily Standup",
+                None,
+                None,
+                1000 + (2 * 24 * 60 * 60), // 2 days
+            ),
+        ];
+
+        let threads = group_into_threads(&emails);
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].total_count, 2);
+    }
+
+    #[test]
+    fn test_normalize_subject_international() {
+        // German reply prefix
+        assert_eq!(normalize_subject("Aw: Meeting"), "meeting");
+        // Swedish reply prefix
+        assert_eq!(normalize_subject("Sv: Meeting"), "meeting");
+        // Numbered reply
+        assert_eq!(normalize_subject("Re[2]: Meeting"), "meeting");
+    }
+
+    #[test]
+    fn test_thread_emails_iterator() {
+        let emails = vec![
+            make_email(1, "Hello", Some("msg1@test"), None, 1000),
+            make_email(2, "Re: Hello", Some("msg2@test"), Some("msg1@test"), 2000),
+        ];
+
+        let threads = group_into_threads(&emails);
+        let thread = &threads[0];
+
+        // Test the emails iterator
+        let uids: Vec<u32> = thread.emails(&emails).map(|e| e.uid).collect();
+        assert_eq!(uids, vec![1, 2]); // Sorted by date ascending
+    }
+
+    #[test]
+    fn test_thread_latest_email() {
+        let emails = vec![
+            make_email(1, "Hello", Some("msg1@test"), None, 1000),
+            make_email(2, "Re: Hello", Some("msg2@test"), Some("msg1@test"), 2000),
+            make_email(
+                3,
+                "Re: Re: Hello",
+                Some("msg3@test"),
+                Some("msg2@test"),
+                3000,
+            ),
+        ];
+
+        let threads = group_into_threads(&emails);
+        let thread = &threads[0];
+
+        // Latest should be the most recent email
+        assert_eq!(thread.latest(&emails).uid, 3);
+        assert_eq!(thread.latest_date, 3000);
+    }
 }

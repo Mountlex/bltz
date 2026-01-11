@@ -18,6 +18,7 @@ use crate::mail::{EmailThread, ThreadId};
 #[derive(Debug, Clone, Default)]
 pub struct OtherAccountInfo {
     /// Short display name for the account
+    #[allow(dead_code)]
     pub name: String,
     /// Whether there's new mail since last viewed
     pub has_new_mail: bool,

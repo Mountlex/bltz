@@ -332,6 +332,130 @@ impl CredentialStore {
     }
 }
 
+/// Global credential store for non-account-specific secrets (e.g., AI API keys)
+pub struct GlobalCredentialStore {
+    api_key_file: PathBuf,
+}
+
+impl GlobalCredentialStore {
+    pub fn new() -> Self {
+        let api_key_file = crate::config::Config::config_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(".ai_api_key");
+
+        Self { api_key_file }
+    }
+
+    /// Try to get a secret from keyring
+    fn keyring_get(&self, key: &str) -> Option<String> {
+        let entry = keyring::Entry::new("bltz", key).ok()?;
+        entry.get_password().ok()
+    }
+
+    /// Try to set a secret in keyring
+    fn keyring_set(&self, key: &str, value: &str) -> bool {
+        if let Ok(entry) = keyring::Entry::new("bltz", key) {
+            entry.set_password(value).is_ok()
+        } else {
+            false
+        }
+    }
+
+    /// Read API key from file fallback
+    fn file_get(&self) -> Option<String> {
+        fs::read_to_string(&self.api_key_file)
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// Write API key to file fallback (with restricted permissions)
+    fn file_set(&self, api_key: &str) -> Result<()> {
+        // Ensure parent directory exists
+        if let Some(parent) = self.api_key_file.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Create file with restricted permissions atomically to avoid TOCTOU
+        #[cfg(unix)]
+        {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&self.api_key_file)?;
+            file.write_all(api_key.as_bytes())?;
+        }
+
+        #[cfg(not(unix))]
+        {
+            fs::write(&self.api_key_file, api_key)?;
+        }
+
+        Ok(())
+    }
+
+    /// Get the AI API key from secure storage
+    pub fn get_ai_api_key(&self) -> Option<String> {
+        // 1. Try environment variable first
+        if let Ok(key) = env::var("BLTZ_AI_API_KEY")
+            && !key.is_empty()
+        {
+            return Some(key);
+        }
+
+        // 2. Try keyring
+        const KEYRING_KEY: &str = "ai_api_key";
+        if let Some(key) = self.keyring_get(KEYRING_KEY) {
+            return Some(key);
+        }
+
+        // 3. Try file fallback
+        self.file_get()
+    }
+
+    /// Store the AI API key in secure storage
+    pub fn set_ai_api_key(&self, api_key: &str) -> Result<()> {
+        const KEYRING_KEY: &str = "ai_api_key";
+
+        // Try keyring first
+        if self.keyring_set(KEYRING_KEY, api_key) {
+            // Verify it worked
+            if self.keyring_get(KEYRING_KEY).is_some() {
+                return Ok(());
+            }
+        }
+
+        // Keyring failed, use file fallback
+        tracing::debug!("Keyring unavailable for AI API key, using file-based storage");
+        self.file_set(api_key)?;
+
+        Ok(())
+    }
+
+    /// Check if AI API key is available
+    pub fn has_ai_api_key(&self) -> bool {
+        self.get_ai_api_key().is_some()
+    }
+
+    /// Delete the AI API key from all storage locations
+    #[allow(dead_code)]
+    pub fn delete_ai_api_key(&self) -> Result<()> {
+        const KEYRING_KEY: &str = "ai_api_key";
+
+        // Try to delete from keyring
+        if let Ok(entry) = keyring::Entry::new("bltz", KEYRING_KEY) {
+            let _ = entry.delete_credential();
+        }
+
+        // Delete file fallback
+        let _ = fs::remove_file(&self.api_key_file);
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,6 +463,100 @@ mod tests {
 
     // Mutex to prevent parallel test interference with env vars
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    // Tests for GlobalCredentialStore
+    mod global_credential_store {
+        use super::*;
+
+        #[test]
+        fn test_env_var_takes_priority() {
+            let _guard = ENV_MUTEX.lock().unwrap();
+            let store = GlobalCredentialStore::new();
+
+            // Clean up any existing file
+            let _ = fs::remove_file(&store.api_key_file);
+
+            // Set file-based key first
+            store.file_set("file_key").unwrap();
+
+            // Set env var - should take priority
+            // SAFETY: Protected by ENV_MUTEX
+            unsafe { env::set_var("BLTZ_AI_API_KEY", "env_key") };
+
+            assert_eq!(store.get_ai_api_key(), Some("env_key".to_string()));
+
+            // Clean up
+            unsafe { env::remove_var("BLTZ_AI_API_KEY") };
+            let _ = fs::remove_file(&store.api_key_file);
+        }
+
+        #[test]
+        fn test_file_fallback() {
+            let _guard = ENV_MUTEX.lock().unwrap();
+            // SAFETY: Protected by ENV_MUTEX
+            unsafe { env::remove_var("BLTZ_AI_API_KEY") };
+
+            let store = GlobalCredentialStore::new();
+
+            // Clean up any existing file
+            let _ = fs::remove_file(&store.api_key_file);
+
+            // Initially should have no key
+            // Note: keyring might have a value from previous tests, so we can't assert None
+
+            // Set via file
+            store.file_set("test_api_key").unwrap();
+
+            // Should retrieve from file
+            assert_eq!(store.file_get(), Some("test_api_key".to_string()));
+
+            // Clean up
+            let _ = fs::remove_file(&store.api_key_file);
+        }
+
+        #[test]
+        fn test_has_ai_api_key() {
+            let _guard = ENV_MUTEX.lock().unwrap();
+            // SAFETY: Protected by ENV_MUTEX
+            unsafe { env::remove_var("BLTZ_AI_API_KEY") };
+
+            let store = GlobalCredentialStore::new();
+
+            // Clean up
+            let _ = fs::remove_file(&store.api_key_file);
+
+            // Set via file
+            store.file_set("test_key").unwrap();
+            assert!(store.has_ai_api_key());
+
+            // Clean up
+            let _ = fs::remove_file(&store.api_key_file);
+        }
+
+        #[test]
+        fn test_set_and_get_api_key() {
+            let _guard = ENV_MUTEX.lock().unwrap();
+            // SAFETY: Protected by ENV_MUTEX
+            unsafe { env::remove_var("BLTZ_AI_API_KEY") };
+
+            let store = GlobalCredentialStore::new();
+
+            // Clean up any existing
+            let _ = store.delete_ai_api_key();
+
+            // Set the key
+            store.set_ai_api_key("my_secret_key").unwrap();
+
+            // Should be able to retrieve it
+            assert!(store.has_ai_api_key());
+            let key = store.get_ai_api_key();
+            assert!(key.is_some());
+            assert_eq!(key.unwrap(), "my_secret_key");
+
+            // Clean up
+            let _ = store.delete_ai_api_key();
+        }
+    }
 
     #[test]
     fn test_env_password() {

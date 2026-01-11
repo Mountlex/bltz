@@ -377,6 +377,7 @@ impl Theme {
     }
 
     /// Account name text in status bar
+    #[allow(dead_code)]
     pub fn account_name() -> Style {
         Style::default()
             .bg(colors::bg_status())

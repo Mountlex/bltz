@@ -222,9 +222,10 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
     let lines = render_quoted_text(&sanitized);
     let text = Text::from(lines);
 
+    let scroll = state.reader.scroll.min(u16::MAX as usize) as u16;
     let paragraph = Paragraph::new(text)
         .wrap(Wrap { trim: false })
-        .scroll((state.reader.scroll as u16, 0));
+        .scroll((scroll, 0));
 
     frame.render_widget(paragraph, inner);
 }

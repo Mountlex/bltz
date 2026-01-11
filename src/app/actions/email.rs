@@ -43,15 +43,17 @@ impl App {
                 .unwrap_or_else(|| self.state.folder.current.clone());
 
             // Mark as read
-            if !email.is_seen() {
-                self.accounts
+            if !email.is_seen()
+                && let Err(e) = self
+                    .accounts
                     .send_command(ImapCommand::SetFlag {
                         uid,
                         flag: EmailFlags::SEEN,
                         folder: folder.clone(),
                     })
                     .await
-                    .ok();
+            {
+                tracing::debug!("Failed to send SetFlag command: {}", e);
             }
 
             // Switch to reader view
@@ -72,10 +74,13 @@ impl App {
                 .clone()
                 .unwrap_or_else(|| self.state.folder.current.clone());
             self.state.status.loading = true;
-            self.accounts
+            if let Err(e) = self
+                .accounts
                 .send_command(ImapCommand::FetchBody { uid, folder })
                 .await
-                .ok();
+            {
+                tracing::debug!("Failed to send FetchBody command: {}", e);
+            }
         }
     }
 
@@ -159,10 +164,9 @@ impl App {
                     self.state.status.loading = true;
                     self.state.set_status("Loading folders...");
                     self.state.folder.picker_pending = true;
-                    self.accounts
-                        .send_command(ImapCommand::ListFolders)
-                        .await
-                        .ok();
+                    if let Err(e) = self.accounts.send_command(ImapCommand::ListFolders).await {
+                        tracing::debug!("Failed to send ListFolders command: {}", e);
+                    }
                 }
                 return;
             }
@@ -208,10 +212,13 @@ impl App {
                 self.prefetch.pending = None;
 
                 // Request folder change and sync (updates cache with fresh data)
-                self.accounts
+                if let Err(e) = self
+                    .accounts
                     .send_command(ImapCommand::SelectFolder { folder })
                     .await
-                    .ok();
+                {
+                    tracing::debug!("Failed to send SelectFolder command: {}", e);
+                }
             }
             self.state.modal = ModalState::None;
         }
@@ -381,23 +388,27 @@ impl App {
 
             // Send background command to IMAP server
             if is_seen {
-                self.accounts
+                if let Err(e) = self
+                    .accounts
                     .send_command(ImapCommand::RemoveFlag {
                         uid,
                         flag: EmailFlags::SEEN,
                         folder,
                     })
                     .await
-                    .ok();
-            } else {
-                self.accounts
-                    .send_command(ImapCommand::SetFlag {
-                        uid,
-                        flag: EmailFlags::SEEN,
-                        folder,
-                    })
-                    .await
-                    .ok();
+                {
+                    tracing::debug!("Failed to send RemoveFlag command: {}", e);
+                }
+            } else if let Err(e) = self
+                .accounts
+                .send_command(ImapCommand::SetFlag {
+                    uid,
+                    flag: EmailFlags::SEEN,
+                    folder,
+                })
+                .await
+            {
+                tracing::debug!("Failed to send SetFlag command: {}", e);
             }
         }
     }
@@ -453,23 +464,27 @@ impl App {
 
             // Send background command to IMAP server
             if is_flagged {
-                self.accounts
+                if let Err(e) = self
+                    .accounts
                     .send_command(ImapCommand::RemoveFlag {
                         uid,
                         flag: EmailFlags::FLAGGED,
                         folder,
                     })
                     .await
-                    .ok();
-            } else {
-                self.accounts
-                    .send_command(ImapCommand::SetFlag {
-                        uid,
-                        flag: EmailFlags::FLAGGED,
-                        folder,
-                    })
-                    .await
-                    .ok();
+                {
+                    tracing::debug!("Failed to send RemoveFlag command: {}", e);
+                }
+            } else if let Err(e) = self
+                .accounts
+                .send_command(ImapCommand::SetFlag {
+                    uid,
+                    flag: EmailFlags::FLAGGED,
+                    folder,
+                })
+                .await
+            {
+                tracing::debug!("Failed to send SetFlag command: {}", e);
             }
         }
     }

@@ -223,6 +223,7 @@ impl App {
             let new_account = AccountConfig {
                 email: data.email.clone(),
                 username: None,
+                name: None, // Can be set later via config file
                 display_name: None,
                 imap: ImapConfig {
                     server: data.imap_server.clone(),

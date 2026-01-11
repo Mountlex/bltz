@@ -78,17 +78,19 @@ impl AccountHandle {
         }
     }
 
-    /// Get display name (short name or email)
+    /// Get account name for UI display
+    /// Priority: name > display_name > email
     pub fn display_name(&self) -> &str {
-        self.config
-            .display_name
-            .as_deref()
-            .unwrap_or(&self.config.email)
+        self.config.account_name()
     }
 
     /// Get a short identifier for status bar display
     pub fn short_name(&self) -> String {
-        if let Some(ref name) = self.config.display_name {
+        // Priority: name > display_name > email local part
+        if let Some(ref name) = self.config.name {
+            // Use first word of account name
+            name.split_whitespace().next().unwrap_or(name).to_string()
+        } else if let Some(ref name) = self.config.display_name {
             // Use first word of display name
             name.split_whitespace().next().unwrap_or(name).to_string()
         } else {

@@ -58,7 +58,9 @@ async fn imap_actor(
 
         match client.connect().await {
             Ok(_) => {
-                event_tx.send(ImapEvent::Connected).await.ok();
+                if let Err(e) = event_tx.send(ImapEvent::Connected).await {
+                    tracing::debug!("Failed to send Connected event: {}", e);
+                }
                 break;
             }
             Err(e) => {
@@ -67,15 +69,19 @@ async fn imap_actor(
                     attempt, MAX_RETRIES, e
                 );
                 tracing::warn!("{}", msg);
-                event_tx.send(ImapEvent::Error(msg)).await.ok();
+                if let Err(e) = event_tx.send(ImapEvent::Error(msg)).await {
+                    tracing::debug!("Failed to send Error event: {}", e);
+                }
 
                 if attempt == MAX_RETRIES {
-                    event_tx
+                    if let Err(e) = event_tx
                         .send(ImapEvent::Error(
                             "Max retries exceeded, giving up".to_string(),
                         ))
                         .await
-                        .ok();
+                    {
+                        tracing::debug!("Failed to send max retries error: {}", e);
+                    }
                     return;
                 }
 
@@ -98,20 +104,24 @@ async fn imap_actor(
             consecutive_errors += 1;
 
             if consecutive_errors > 5 {
-                event_tx
+                if let Err(e) = event_tx
                     .send(ImapEvent::Error("Too many consecutive errors".to_string()))
                     .await
-                    .ok();
+                {
+                    tracing::debug!("Failed to send consecutive errors event: {}", e);
+                }
                 let delay = (2u64.pow(consecutive_errors.min(5))).min(60);
                 tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
             }
 
             // Try to reconnect
             if let Err(e) = reconnect(&mut client).await {
-                event_tx
+                if let Err(send_err) = event_tx
                     .send(ImapEvent::Error(format!("Reconnect failed: {}", e)))
                     .await
-                    .ok();
+                {
+                    tracing::debug!("Failed to send reconnect error event: {}", send_err);
+                }
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
             continue;
@@ -125,11 +135,12 @@ async fn imap_actor(
             Some(s) => s,
             None => {
                 tracing::warn!("No session available for IDLE");
-                if let Err(e) = reconnect(&mut client).await {
-                    event_tx
+                if let Err(e) = reconnect(&mut client).await
+                    && let Err(send_err) = event_tx
                         .send(ImapEvent::Error(format!("Reconnect failed: {}", e)))
                         .await
-                        .ok();
+                {
+                    tracing::debug!("Failed to send reconnect error event: {}", send_err);
                 }
                 continue;
             }
@@ -143,11 +154,12 @@ async fn imap_actor(
                 client.restore_session(session);
             }
             // Reconnect since IDLE failed
-            if let Err(e) = reconnect(&mut client).await {
-                event_tx
+            if let Err(e) = reconnect(&mut client).await
+                && let Err(send_err) = event_tx
                     .send(ImapEvent::Error(format!("Reconnect failed: {}", e)))
                     .await
-                    .ok();
+            {
+                tracing::debug!("Failed to send reconnect error event: {}", send_err);
             }
             continue;
         }
@@ -182,15 +194,19 @@ async fn imap_actor(
                     // Server sent notification - sync new mail
                     Ok(Ok(_)) => {
                         tracing::info!("IDLE: Server notification received");
-                        event_tx.send(ImapEvent::NewMail { count: 1 }).await.ok();
+                        if let Err(e) = event_tx.send(ImapEvent::NewMail { count: 1 }).await {
+                            tracing::debug!("Failed to send NewMail event: {}", e);
+                        }
                         do_sync_folder(&mut client, &cache, &account_id, &current_folder, &event_tx).await;
                     }
                     // IDLE error
                     Ok(Err(e)) => {
                         tracing::warn!("IDLE error: {:?}", e);
                         // Try to reconnect
-                        if let Err(e) = reconnect(&mut client).await {
-                            event_tx.send(ImapEvent::Error(format!("Reconnect failed: {}", e))).await.ok();
+                        if let Err(e) = reconnect(&mut client).await
+                            && let Err(send_err) = event_tx.send(ImapEvent::Error(format!("Reconnect failed: {}", e))).await
+                        {
+                            tracing::debug!("Failed to send reconnect error event: {}", send_err);
                         }
                     }
                     // Timeout - just refresh IDLE (servers may drop long IDLEs)
@@ -210,8 +226,10 @@ async fn imap_actor(
                     Ok(session) => client.restore_session(session),
                     Err(e) => {
                         tracing::error!("Failed to end IDLE after command: {:?}", e);
-                        if let Err(e) = reconnect(&mut client).await {
-                            event_tx.send(ImapEvent::Error(format!("Reconnect failed: {}", e))).await.ok();
+                        if let Err(e) = reconnect(&mut client).await
+                            && let Err(send_err) = event_tx.send(ImapEvent::Error(format!("Reconnect failed: {}", e))).await
+                        {
+                            tracing::debug!("Failed to send reconnect error event: {}", send_err);
                         }
                         continue;
                     }

@@ -179,12 +179,15 @@ fn render_preview(frame: &mut Frame, area: Rect, state: &AppState) {
         // Label width is 9 chars ("Subject: "), so value area is width - 9
         let value_width = inner.width.saturating_sub(9) as usize;
 
+        use unicode_width::UnicodeWidthStr;
+
         // Helper to calculate lines needed for a field value
         let lines_for_field = |text: &str| -> u16 {
             if text.is_empty() || value_width == 0 {
                 1
             } else {
-                text.len().div_ceil(value_width).max(1) as u16
+                let text_width = text.width();
+                text_width.div_ceil(value_width).max(1) as u16
             }
         };
 
@@ -268,9 +271,10 @@ fn render_email_body(frame: &mut Frame, area: Rect, state: &AppState) {
     let lines = render_quoted_text(&sanitized);
     let text = Text::from(lines);
 
+    let scroll = state.reader.scroll.min(u16::MAX as usize) as u16;
     let paragraph = Paragraph::new(text)
         .wrap(Wrap { trim: false })
-        .scroll((state.reader.scroll as u16, 0));
+        .scroll((scroll, 0));
 
     frame.render_widget(paragraph, area);
 }

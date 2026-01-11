@@ -121,8 +121,20 @@ async fn run_setup() -> Result<()> {
         );
     };
 
-    // Get display name
-    print!("Display name (optional): ");
+    // Get account name (for UI display)
+    print!("Account name (e.g., Work, Personal - optional): ");
+    io::stdout().flush()?;
+    let mut account_name = String::new();
+    io::stdin().read_line(&mut account_name)?;
+    let account_name = account_name.trim();
+    let account_name = if account_name.is_empty() {
+        None
+    } else {
+        Some(account_name.to_string())
+    };
+
+    // Get display name (for From field in emails)
+    print!("Display name for emails (optional): ");
     io::stdout().flush()?;
     let mut display_name = String::new();
     io::stdin().read_line(&mut display_name)?;
@@ -190,6 +202,7 @@ async fn run_setup() -> Result<()> {
         accounts: vec![config::AccountConfig {
             email: email.clone(),
             username: None,
+            name: account_name,
             display_name,
             imap: config::ImapConfig {
                 server: imap_server,
@@ -306,8 +319,16 @@ async fn main() -> Result<()> {
         None => {
             setup_logging();
 
-            let config = Config::load()?;
+            let mut config = Config::load()?;
             config.ensure_dirs()?;
+
+            // Migrate AI API key from config to secure storage if present
+            if config.ai.migrate_api_key_to_secure_storage() {
+                // Save config without the API key
+                if let Err(e) = config.save() {
+                    tracing::warn!("Failed to save config after API key migration: {}", e);
+                }
+            }
 
             // Initialize theme from config
             crate::ui::theme::init_theme(config.ui.theme);

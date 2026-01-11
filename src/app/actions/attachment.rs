@@ -177,29 +177,40 @@ impl App {
         if let Some((pending_index, save_path)) = self.state.reader.pending_attachment_save.take()
             && pending_index == attachment_index
         {
-            // Write file
-            match std::fs::write(&save_path, &data) {
-                Ok(_) => {
-                    // Check if this is a temp file (for opening)
-                    if save_path.starts_with(std::env::temp_dir()) {
-                        // Open with system app
-                        match open::that(&save_path) {
-                            Ok(_) => {
-                                self.state
-                                    .set_status(format!("Opened {}", attachment.filename));
-                            }
-                            Err(e) => {
-                                self.state.set_error(format!("Failed to open: {}", e));
-                            }
-                        }
+            enum SaveOutcome {
+                Opened,
+                Saved(PathBuf),
+            }
+
+            let filename = attachment.filename.clone();
+            let is_temp = save_path.starts_with(std::env::temp_dir());
+            let write_result =
+                tokio::task::spawn_blocking(move || -> Result<SaveOutcome, String> {
+                    std::fs::write(&save_path, &data)
+                        .map_err(|e| format!("Failed to save: {}", e))?;
+                    if is_temp {
+                        open::that(&save_path).map_err(|e| format!("Failed to open: {}", e))?;
+                        Ok(SaveOutcome::Opened)
                     } else {
-                        // Regular save
-                        self.state
-                            .set_status(format!("Saved to {}", save_path.display()));
+                        Ok(SaveOutcome::Saved(save_path))
                     }
+                })
+                .await;
+
+            match write_result {
+                Ok(Ok(SaveOutcome::Opened)) => {
+                    self.state.set_status(format!("Opened {}", filename));
                 }
-                Err(e) => {
-                    self.state.set_error(format!("Failed to save: {}", e));
+                Ok(Ok(SaveOutcome::Saved(path))) => {
+                    self.state
+                        .set_status(format!("Saved to {}", path.display()));
+                }
+                Ok(Err(error)) => {
+                    self.state.set_error(error);
+                }
+                Err(error) => {
+                    self.state
+                        .set_error(format!("Attachment save task failed: {}", error));
                 }
             }
             return;

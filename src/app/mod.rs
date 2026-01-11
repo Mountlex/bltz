@@ -150,8 +150,8 @@ impl App {
 
         // Initialize AI actor if enabled
         let ai_actor = if config.ai.is_enabled() {
-            if let Some(ref api_key) = config.ai.api_key {
-                let client = OpenRouterClient::new(api_key.clone(), config.ai.model.clone());
+            if let Some(api_key) = config.ai.get_api_key() {
+                let client = OpenRouterClient::new(api_key, config.ai.model.clone());
                 Some(spawn_ai_actor(
                     client,
                     config.ai.summary_max_tokens,

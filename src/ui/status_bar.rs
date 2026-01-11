@@ -17,19 +17,50 @@ use crate::constants::SPINNER_FRAME_MS;
 #[cfg(unix)]
 fn get_memory_usage() -> Option<u64> {
     use std::fs;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    struct MemCache {
+        last_update: Instant,
+        value: Option<u64>,
+    }
+
+    static CACHE: OnceLock<Mutex<MemCache>> = OnceLock::new();
+
+    let cache = CACHE.get_or_init(|| {
+        Mutex::new(MemCache {
+            last_update: Instant::now() - Duration::from_secs(2),
+            value: None,
+        })
+    });
+
+    if let Ok(guard) = cache.lock()
+        && guard.last_update.elapsed() < Duration::from_secs(1)
+    {
+        return guard.value;
+    }
+
     // Read /proc/self/status and find VmRSS line
     let status = fs::read_to_string("/proc/self/status").ok()?;
+    let mut value = None;
     for line in status.lines() {
         if line.starts_with("VmRSS:") {
             // Format: "VmRSS:     12345 kB"
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
                 let kb: u64 = parts[1].parse().ok()?;
-                return Some(kb * 1024); // Convert to bytes
+                value = Some(kb * 1024); // Convert to bytes
             }
+            break;
         }
     }
-    None
+
+    if let Ok(mut guard) = cache.lock() {
+        guard.last_update = Instant::now();
+        guard.value = value;
+    }
+
+    value
 }
 
 #[cfg(not(unix))]
@@ -265,22 +296,29 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
         + display_width(&memory_info)
         + display_width(&sync_info)
         + indicators_width
-        + 2; // +2 for account padding
-    let min_padding = 2; // Minimum spacing between left and right
+        + 1; // +1 for space after account name
+    let min_padding = 1; // Minimum spacing between left and right
 
     let available_for_account = width.saturating_sub(left_width + fixed_right_width + min_padding);
-    let account = if display_width(info.account) <= available_for_account {
+    let account = if available_for_account == 0 {
+        String::new() // No space for account name
+    } else if display_width(info.account) <= available_for_account {
         info.account.to_string()
     } else {
-        truncate_to_width(info.account, available_for_account.max(10))
+        truncate_to_width(info.account, available_for_account)
     };
 
+    // Calculate right width: account + space (only if account is shown) + indicators
+    let account_with_space = if account.is_empty() {
+        String::new()
+    } else {
+        format!("{} ", account)
+    };
     let right_width = display_width(&status_msg)
         + display_width(&memory_info)
         + display_width(&sync_info)
-        + display_width(&account)
-        + indicators_width
-        + 1;
+        + display_width(&account_with_space)
+        + indicators_width;
     let padding_width = width.saturating_sub(left_width + right_width);
     let padding = " ".repeat(padding_width);
 
@@ -307,7 +345,7 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
         Span::styled(status_msg, Theme::status_info()),
         Span::styled(memory_info, Theme::status_info()),
         Span::styled(sync_info, Theme::status_info()),
-        Span::styled(format!("{} ", account), style),
+        Span::styled(account_with_space, style),
     ]);
 
     // Add account indicator spans
@@ -322,20 +360,17 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
 
 /// Build account indicator spans for the status bar
 /// Returns a list of (text, style) pairs
+/// Shows only indicator symbols (●/○/!) for other accounts, not their names
 fn build_account_indicators(accounts: &[OtherAccountInfo]) -> Vec<(String, Style)> {
     if accounts.is_empty() {
         return Vec::new();
     }
 
     let mut spans = Vec::new();
-    spans.push(("│ ".to_string(), Theme::status_muted()));
+    spans.push(("│".to_string(), Theme::status_muted()));
 
-    for (i, account) in accounts.iter().enumerate() {
-        if i > 0 {
-            spans.push((" ".to_string(), Theme::status_bar()));
-        }
-
-        // Indicator symbol
+    for account in accounts.iter() {
+        // Indicator symbol only (no account name)
         let (indicator, indicator_style) = if account.has_error {
             (symbols::ACCOUNT_ERROR, Theme::account_error())
         } else if account.has_new_mail {
@@ -347,9 +382,6 @@ fn build_account_indicators(accounts: &[OtherAccountInfo]) -> Vec<(String, Style
         };
 
         spans.push((indicator.to_string(), indicator_style));
-
-        // Account name (short)
-        spans.push((account.name.clone(), Theme::account_name()));
 
         // New mail count badge if there's new mail
         if account.has_new_mail && account.new_count > 0 {

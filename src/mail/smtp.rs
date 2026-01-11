@@ -80,15 +80,20 @@ impl SmtpClient {
                 .context("Invalid from address")?
         };
 
-        let to_mailbox = compose
-            .to
-            .parse::<Mailbox>()
-            .context("Invalid recipient address")?;
-
         let mut builder = Message::builder()
             .from(from_mailbox)
-            .to(to_mailbox)
             .subject(&compose.subject);
+
+        // Add To recipients (handle comma-separated list and trailing commas)
+        for to_addr in compose.to.split(',') {
+            let to_addr = to_addr.trim();
+            if !to_addr.is_empty() {
+                let to_mailbox = to_addr
+                    .parse::<Mailbox>()
+                    .context(format!("Invalid recipient address: {}", to_addr))?;
+                builder = builder.to(to_mailbox);
+            }
+        }
 
         // Add CC recipients if present
         if !compose.cc.is_empty() {
