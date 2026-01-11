@@ -140,13 +140,18 @@ impl ContactsDb {
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<Contact>> {
-        let pattern = format!("%{}%", query);
+        // Escape SQL LIKE wildcards (% and _) to prevent unintended matching
+        let escaped = query
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{}%", escaped);
 
         let rows = sqlx::query(
             r#"
             SELECT id, email, name, last_contacted, contact_count
             FROM contacts
-            WHERE email LIKE ? OR name LIKE ?
+            WHERE email LIKE ? ESCAPE '\' OR name LIKE ? ESCAPE '\'
             ORDER BY contact_count DESC
             LIMIT 20
             "#,

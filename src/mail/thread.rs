@@ -127,12 +127,61 @@ pub fn group_into_threads(emails: &[EmailHeader]) -> Vec<EmailThread> {
         }
     }
 
-    // Merge subject groups that have more than one email
-    for (subject, indices) in subject_groups {
+    // Merge subject groups that have more than one email AND are within date proximity
+    // (7 days max between emails to be considered part of same thread)
+    const MAX_THREAD_GAP_SECS: i64 = 7 * 24 * 60 * 60; // 7 days
+
+    for (subject, mut indices) in subject_groups {
         if indices.len() > 1 {
-            // Multiple emails with same subject - treat as thread
-            let thread_id = format!("subj:{}", subject);
-            thread_groups.entry(thread_id).or_default().extend(indices);
+            // Sort by date to check proximity
+            indices.sort_by_key(|&i| emails[i].date);
+
+            // Split into sub-groups based on date proximity
+            let mut current_group = vec![indices[0]];
+            for &i in &indices[1..] {
+                let prev_date = emails[*current_group.last().unwrap()].date;
+                let curr_date = emails[i].date;
+                if curr_date - prev_date <= MAX_THREAD_GAP_SECS {
+                    // Within proximity, add to current group
+                    current_group.push(i);
+                } else {
+                    // Gap too large, flush current group and start new one
+                    if current_group.len() > 1 {
+                        let thread_id =
+                            format!("subj:{}:{}", subject, emails[current_group[0]].date);
+                        thread_groups
+                            .entry(thread_id)
+                            .or_default()
+                            .extend(current_group);
+                    } else {
+                        // Single email - keep as its own thread
+                        let idx = current_group[0];
+                        let email = &emails[idx];
+                        let thread_id = email
+                            .message_id
+                            .clone()
+                            .unwrap_or_else(|| format!("uid:{}", email.uid));
+                        thread_groups.entry(thread_id).or_default().push(idx);
+                    }
+                    current_group = vec![i];
+                }
+            }
+            // Flush remaining group
+            if current_group.len() > 1 {
+                let thread_id = format!("subj:{}:{}", subject, emails[current_group[0]].date);
+                thread_groups
+                    .entry(thread_id)
+                    .or_default()
+                    .extend(current_group);
+            } else {
+                let idx = current_group[0];
+                let email = &emails[idx];
+                let thread_id = email
+                    .message_id
+                    .clone()
+                    .unwrap_or_else(|| format!("uid:{}", email.uid));
+                thread_groups.entry(thread_id).or_default().push(idx);
+            }
         } else {
             // Single email - keep as its own thread
             let i = indices[0];

@@ -411,17 +411,20 @@ impl ImapClient {
             // Use UID EXPUNGE for targeted deletion (only affects this specific UID)
             // Format: UID EXPUNGE <sequence-set>
             let cmd = format!("UID EXPUNGE {}", uid);
-            if let Err(e) = session.run_command_and_check_ok(&cmd).await {
-                tracing::warn!("UID EXPUNGE failed: {:?}, falling back to EXPUNGE", e);
-                // Fall through to regular EXPUNGE
-            } else {
-                tracing::debug!("Used UID EXPUNGE for uid {}", uid);
-                return Ok(());
-            }
-        }
-
-        {
-            // Fallback: regular EXPUNGE (affects all \Deleted messages)
+            session
+                .run_command_and_check_ok(&cmd)
+                .await
+                .context("UID EXPUNGE failed")?;
+            tracing::debug!("Used UID EXPUNGE for uid {}", uid);
+        } else {
+            // Server doesn't support UIDPLUS - use regular EXPUNGE
+            // WARNING: This affects ALL messages with \Deleted flag, not just this UID
+            // Only safe if we're certain no other emails have \Deleted flag
+            tracing::warn!(
+                "Server lacks UIDPLUS support, using regular EXPUNGE for uid {} - \
+                 this may affect other emails marked for deletion",
+                uid
+            );
             let responses: Vec<_> = session
                 .expunge()
                 .await

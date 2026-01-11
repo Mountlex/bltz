@@ -126,8 +126,9 @@ impl App {
         self.state.set_status("Undo: star status restored");
     }
 
-    async fn undo_delete(&mut self, email: crate::mail::types::EmailHeader, thread_index: usize) {
+    async fn undo_delete(&mut self, email: crate::mail::types::EmailHeader, _thread_index: usize) {
         let uid = email.uid;
+        let message_id = email.message_id.clone();
 
         // Cancel the pending deletion
         self.pending_deletions.retain(|pd| pd.uid != uid);
@@ -139,9 +140,18 @@ impl App {
         // Invalidate search cache since threads changed
         self.state.invalidate_search_cache();
 
-        // Restore selection (or clamp to bounds)
-        let visible_count = self.state.visible_thread_count();
-        self.state.thread.selected = thread_index.min(visible_count.saturating_sub(1));
+        // Find the thread containing the restored email and select it
+        let visible = self.state.visible_threads();
+        let emails = &self.state.emails;
+        let restored_thread_idx = visible
+            .iter()
+            .position(|t| {
+                t.emails(emails)
+                    .any(|e| e.message_id.as_ref() == message_id.as_ref())
+            })
+            .unwrap_or(0);
+
+        self.state.thread.selected = restored_thread_idx;
         self.state.thread.selected_in_thread = 0;
 
         self.state.set_status("Undo: email restored");

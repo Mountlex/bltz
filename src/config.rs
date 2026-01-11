@@ -356,14 +356,24 @@ impl Config {
             .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
 
         // Convert legacy config to new format
-        Ok(Config {
+        let config = Config {
             accounts: vec![legacy.account],
             default_account: Some(0),
             notifications: NotificationConfig::default(),
             ui: legacy.ui,
             cache: legacy.cache,
             ai: AiConfig::default(),
-        })
+        };
+
+        // Final validation: ensure at least one account exists
+        if config.accounts.is_empty() {
+            anyhow::bail!(
+                "Configuration file at {} has no accounts configured",
+                path.display()
+            );
+        }
+
+        Ok(config)
     }
 
     pub fn save(&self) -> Result<()> {
@@ -375,8 +385,14 @@ impl Config {
 
         let content = toml::to_string_pretty(self).context("Failed to serialize config")?;
 
-        fs::write(&path, content)
-            .with_context(|| format!("Failed to write config file: {}", path.display()))?;
+        // Atomic write: write to temp file, then rename (prevents corruption on crash)
+        let temp_path = path.with_extension("toml.tmp");
+        fs::write(&temp_path, &content).with_context(|| {
+            format!("Failed to write temp config file: {}", temp_path.display())
+        })?;
+
+        fs::rename(&temp_path, &path)
+            .with_context(|| format!("Failed to rename config file: {}", path.display()))?;
 
         Ok(())
     }

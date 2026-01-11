@@ -3,10 +3,32 @@ use mail_parser::{MessageParser, MimeHeaders, PartType};
 use super::types::{Attachment, EmailBody, EmailFlags, EmailHeader};
 
 pub fn parse_envelope(uid: u32, raw: &[u8], flags: EmailFlags) -> Option<EmailHeader> {
-    let message = MessageParser::default().parse(raw)?;
+    let message = match MessageParser::default().parse(raw) {
+        Some(msg) => msg,
+        None => {
+            tracing::warn!(
+                "Failed to parse email UID {}: malformed message ({} bytes)",
+                uid,
+                raw.len()
+            );
+            return None;
+        }
+    };
 
-    let from = message.from()?.first()?;
-    let from_addr = from.address()?.to_string();
+    let from = match message.from().and_then(|f| f.first()) {
+        Some(f) => f,
+        None => {
+            tracing::debug!("Email UID {} has no From header", uid);
+            return None;
+        }
+    };
+    let from_addr = match from.address() {
+        Some(addr) => addr.to_string(),
+        None => {
+            tracing::debug!("Email UID {} has From header without address", uid);
+            return None;
+        }
+    };
     let from_name = from.name().map(|s| s.to_string());
 
     // Extract all To recipients (comma-separated)
@@ -29,7 +51,13 @@ pub fn parse_envelope(uid: u32, raw: &[u8], flags: EmailFlags) -> Option<EmailHe
 
     let subject = message.subject().map(|s| s.to_string()).unwrap_or_default();
 
-    let date = message.date()?.to_timestamp();
+    let date = match message.date() {
+        Some(d) => d.to_timestamp(),
+        None => {
+            tracing::debug!("Email UID {} has no Date header, using epoch", uid);
+            0 // Use epoch as fallback instead of dropping the email
+        }
+    };
 
     let message_id = message.message_id().map(|s| s.to_string());
 

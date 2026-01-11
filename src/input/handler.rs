@@ -294,14 +294,13 @@ fn handle_autocomplete_input(key: KeyEvent, bindings: &KeyBindings) -> InputResu
     }
 
     match key.code {
-        KeyCode::Tab => InputResult::Action(Action::AutocompleteSelect),
+        KeyCode::Tab | KeyCode::Enter => InputResult::Action(Action::AutocompleteSelect),
         KeyCode::Up => InputResult::Action(Action::AutocompleteUp),
         KeyCode::Down => InputResult::Action(Action::AutocompleteDown),
         KeyCode::Esc => InputResult::Action(Action::AutocompleteClose),
         // Allow normal text input to continue
         KeyCode::Char(c) => InputResult::Char(c),
         KeyCode::Backspace => InputResult::Backspace,
-        KeyCode::Enter => InputResult::Action(Action::NextField), // Move to next field
         _ => InputResult::Continue,
     }
 }

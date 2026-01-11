@@ -360,23 +360,27 @@ fn urlencod(s: &str) -> String {
     result
 }
 
-/// URL-decode a string
+/// URL-decode a string (handles multi-byte UTF-8 correctly)
 fn urldecodd(s: &str) -> String {
-    let mut result = String::new();
+    let mut bytes = Vec::new();
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '%' {
             let hex: String = chars.by_ref().take(2).collect();
             if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                result.push(byte as char);
+                bytes.push(byte);
             }
         } else if c == '+' {
-            result.push(' ');
+            bytes.push(b' ');
         } else {
-            result.push(c);
+            // For regular ASCII chars, add as bytes
+            for b in c.to_string().as_bytes() {
+                bytes.push(*b);
+            }
         }
     }
-    result
+    // Convert bytes to UTF-8, replacing invalid sequences
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 /// Get a fresh access token using a stored refresh token

@@ -397,7 +397,16 @@ async fn handle_command(
             // Switch to correct folder if needed
             let needs_folder_switch = folder != *current_folder;
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
-                tracing::warn!("Failed to select folder '{}' for flag: {}", folder, e);
+                tracing::error!("Failed to select folder '{}' for flag: {}", folder, e);
+                event_tx
+                    .send(ImapEvent::Error(format!(
+                        "Failed to select folder '{}': {}",
+                        folder, e
+                    )))
+                    .await
+                    .ok();
+                // Don't attempt flag operation on wrong folder
+                return;
             }
 
             match client.add_flag(uid, flag).await {
@@ -447,7 +456,16 @@ async fn handle_command(
             // Switch to correct folder if needed
             let needs_folder_switch = folder != *current_folder;
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
-                tracing::warn!("Failed to select folder '{}' for flag: {}", folder, e);
+                tracing::error!("Failed to select folder '{}' for flag: {}", folder, e);
+                event_tx
+                    .send(ImapEvent::Error(format!(
+                        "Failed to select folder '{}': {}",
+                        folder, e
+                    )))
+                    .await
+                    .ok();
+                // Don't attempt flag operation on wrong folder
+                return;
             }
 
             match client.remove_flag(uid, flag).await {
@@ -497,7 +515,16 @@ async fn handle_command(
             // Switch to correct folder if needed
             let needs_folder_switch = folder != *current_folder;
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
-                tracing::warn!("Failed to select folder '{}' for delete: {}", folder, e);
+                tracing::error!("Failed to select folder '{}' for delete: {}", folder, e);
+                event_tx
+                    .send(ImapEvent::Error(format!(
+                        "Failed to select folder '{}': {}",
+                        folder, e
+                    )))
+                    .await
+                    .ok();
+                // Don't attempt delete on wrong folder
+                return;
             }
 
             match client.delete(uid).await {
@@ -556,9 +583,11 @@ async fn handle_command(
         ImapCommand::PrefetchFolder { folder } => {
             // Background prefetch: sync a folder without changing the active folder
             let original_folder = current_folder.clone();
+            let mut folder_changed = false;
 
             // Select and sync the prefetch folder (silently)
             if client.select_folder(&folder).await.is_ok() {
+                folder_changed = true;
                 if let Err(e) = client.sync_current_folder(cache, account_id, &folder).await {
                     tracing::warn!("Prefetch sync failed for '{}': {}", folder, e);
                 } else {
@@ -571,10 +600,28 @@ async fn handle_command(
             }
 
             // Re-select original folder for IDLE to work on correct mailbox
-            if *current_folder != original_folder
-                && client.select_folder(&original_folder).await.is_ok()
-            {
-                *current_folder = original_folder;
+            if folder_changed {
+                match client.select_folder(&original_folder).await {
+                    Ok(_) => {
+                        *current_folder = original_folder;
+                    }
+                    Err(e) => {
+                        // Critical: IDLE will monitor wrong folder until reconnect
+                        tracing::error!(
+                            "Failed to restore folder '{}' after prefetch, IDLE may be on wrong folder: {}",
+                            original_folder,
+                            e
+                        );
+                        // Send error event to notify UI - connection may need reset
+                        event_tx
+                            .send(ImapEvent::Error(format!(
+                                "Prefetch caused folder desync - may need to refresh: {}",
+                                e
+                            )))
+                            .await
+                            .ok();
+                    }
+                }
             }
         }
         ImapCommand::FetchAttachment {
@@ -782,7 +829,13 @@ impl ImapClient {
     ) -> Result<SyncResult> {
         let mailbox = self.select_folder(folder).await?;
 
-        let server_uid_validity = mailbox.uid_validity.unwrap_or(0);
+        // UID validity is required per RFC 3501 - if missing, something is wrong
+        let server_uid_validity = mailbox.uid_validity.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Server did not provide UID validity for folder '{}'",
+                folder
+            )
+        })?;
         let server_uid_next = mailbox.uid_next.unwrap_or(1);
         let message_count = mailbox.exists;
 

@@ -24,7 +24,7 @@ pub async fn search_body_fts(
         .replace('^', "\\^");
     let fts_query = format!("\"{}\"*", escaped);
 
-    let rows: Vec<(i64,)> = sqlx::query_as(
+    let rows: Vec<(i64,)> = match sqlx::query_as(
         r#"
         SELECT b.uid
         FROM email_bodies b
@@ -38,7 +38,13 @@ pub async fn search_body_fts(
     .bind(&fts_query)
     .fetch_all(pool)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!("FTS5 search failed for query '{}': {}", query, e);
+            return Ok(HashSet::new());
+        }
+    };
 
     Ok(rows.into_iter().map(|(uid,)| uid as u32).collect())
 }
