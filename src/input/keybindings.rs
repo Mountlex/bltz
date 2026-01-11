@@ -34,7 +34,7 @@ pub enum Action {
     Refresh,
     ToggleThread,
     Search,
-    FolderPicker,
+    ToggleFolderSidebar,
 
     // Contacts
     OpenContacts,
@@ -167,7 +167,7 @@ impl KeyBindings {
         map.insert(key_code(KeyCode::Tab), Action::ToggleThread);
         map.insert(key(' '), Action::ToggleThread);
         map.insert(key('/'), Action::Search);
-        map.insert(key('b'), Action::FolderPicker);
+        map.insert(key('b'), Action::ToggleFolderSidebar);
         map.insert(key(':'), Action::Command);
 
         // Account switching (] = next, [ = prev)
@@ -247,8 +247,8 @@ impl KeyBindings {
         map.insert(key(' '), Action::ToggleThread);
         map.insert(key_code(KeyCode::F(3)), Action::Search);
         map.insert(key('/'), Action::Search);
-        map.insert(key('p'), Action::FolderPicker);
-        map.insert(key_code(KeyCode::F(2)), Action::FolderPicker);
+        map.insert(key('p'), Action::ToggleFolderSidebar);
+        map.insert(key_code(KeyCode::F(2)), Action::ToggleFolderSidebar);
         map.insert(key(':'), Action::Command);
 
         // Account switching (] = next, [ = prev, or Ctrl+Right/Left)
@@ -379,7 +379,7 @@ fn action_description(action: &Action) -> String {
         Action::Refresh => "Refresh / sync".to_string(),
         Action::ToggleThread => "Toggle thread expansion".to_string(),
         Action::Search => "Search emails".to_string(),
-        Action::FolderPicker => "Open folder picker".to_string(),
+        Action::ToggleFolderSidebar => "Toggle folder sidebar".to_string(),
         Action::OpenContacts => "Open contacts".to_string(),
         Action::EditContact => "Edit contact".to_string(),
         Action::Command => "Enter command mode".to_string(),
@@ -441,7 +441,7 @@ fn action_category(action: &Action) -> &'static str {
         | Action::Refresh
         | Action::ToggleThread
         | Action::Search
-        | Action::FolderPicker
+        | Action::ToggleFolderSidebar
         | Action::Undo
         | Action::OpenContacts
         | Action::ToggleHeaderExpand => "Actions",

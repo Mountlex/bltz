@@ -1,4 +1,4 @@
-//! Modal popup overlays for the inbox view.
+//! Modal popup overlays for the inbox view (help popup, command bar, confirm modal).
 
 use ratatui::{
     Frame,
@@ -13,7 +13,7 @@ use crate::command::{CommandHelp, CommandResult, PendingCommand};
 use crate::input::KeybindingEntry;
 
 use super::super::components::centered_rect_constrained;
-use super::super::theme::{Theme, colors, symbols};
+use super::super::theme::{Theme, colors};
 
 pub fn render_command_bar(frame: &mut Frame, area: Rect, state: &AppState) {
     // Confirmation is now shown in modal, so skip command bar rendering for confirmations
@@ -91,68 +91,6 @@ pub fn render_confirm_modal(frame: &mut Frame, area: Rect, pending: &PendingComm
 
     let paragraph = Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center);
     frame.render_widget(paragraph, inner);
-}
-
-/// Render a folder picker overlay
-pub fn render_folder_picker(frame: &mut Frame, area: Rect, state: &AppState) {
-    // Calculate popup size and position
-    let max_height = state.folder.list.len() as u16 + 2;
-    let popup_area = centered_rect_constrained(area, 10, 30, 3, max_height);
-
-    // Clear the area behind the popup
-    frame.render_widget(Clear, popup_area);
-
-    // Create the popup block
-    let block = Block::default()
-        .title(" Folders ")
-        .borders(Borders::ALL)
-        .border_style(Theme::border_focused());
-
-    let inner = block.inner(popup_area);
-    frame.render_widget(block, popup_area);
-
-    if state.folder.list.is_empty() {
-        let msg = if state.status.loading {
-            "Loading..."
-        } else {
-            "No folders"
-        };
-        let paragraph = Paragraph::new(msg)
-            .style(Theme::text_muted())
-            .alignment(ratatui::layout::Alignment::Center);
-        frame.render_widget(paragraph, inner);
-        return;
-    }
-
-    // Build folder list items
-    let items: Vec<ListItem> = state
-        .folder
-        .list
-        .iter()
-        .enumerate()
-        .map(|(idx, folder)| {
-            let is_selected = idx == state.folder.selected;
-            let is_current = folder == &state.folder.current;
-
-            let style = if is_selected {
-                Theme::selected()
-            } else if is_current {
-                Theme::text_accent().add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-
-            let prefix = if is_current {
-                format!("{} ", symbols::CURRENT_FOLDER)
-            } else {
-                "  ".to_string()
-            };
-            ListItem::new(format!("{}{}", prefix, folder)).style(style)
-        })
-        .collect();
-
-    let list = List::new(items);
-    frame.render_widget(list, inner);
 }
 
 /// Render the unified help popup (keybindings + commands)

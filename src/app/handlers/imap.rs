@@ -2,7 +2,7 @@
 //!
 //! Focused handler methods for each IMAP event type, extracted from the event loop.
 
-use crate::app::state::{ModalState, View};
+use crate::app::state::View;
 use crate::mail::ImapCommand;
 use crate::mail::types::{EmailBody, EmailFlags};
 
@@ -187,10 +187,8 @@ impl App {
         if self.state.folder.current.is_empty() {
             self.state.folder.current = "INBOX".to_string();
         }
-        // Auto-open folder picker if it was pending
-        if self.state.folder.picker_pending {
-            self.state.folder.picker_pending = false;
-            self.state.modal = ModalState::FolderPicker;
+        // Sync sidebar selection if sidebar is visible (folders just loaded)
+        if self.state.folder.sidebar_visible {
             // Set selection to current folder
             if let Some(idx) = self
                 .state
@@ -199,7 +197,7 @@ impl App {
                 .iter()
                 .position(|f| f == &self.state.folder.current)
             {
-                self.state.folder.selected = idx;
+                self.state.folder.sidebar_selected = idx;
             }
         }
         // Trigger folder prefetch if pending (for conversation mode)

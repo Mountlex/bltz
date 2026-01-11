@@ -137,7 +137,6 @@ pub enum ModalState {
         result: Option<CommandResult>,
         pending: Option<PendingCommand>,
     },
-    FolderPicker,
     Help {
         keybindings: Vec<KeybindingEntry>,
         commands: Vec<CommandHelp>,
@@ -152,10 +151,6 @@ impl ModalState {
 
     pub fn is_command(&self) -> bool {
         matches!(self, Self::Command { .. })
-    }
-
-    pub fn is_folder_picker(&self) -> bool {
-        matches!(self, Self::FolderPicker)
     }
 
     pub fn is_help(&self) -> bool {
@@ -318,8 +313,13 @@ pub struct AutocompleteState {
 pub struct FolderState {
     pub current: String,
     pub list: Vec<String>,
-    pub picker_pending: bool,
     pub selected: usize,
+    /// Whether the folder sidebar is visible
+    pub sidebar_visible: bool,
+    /// Whether the folder sidebar has keyboard focus
+    pub sidebar_focused: bool,
+    /// Currently highlighted folder index in sidebar
+    pub sidebar_selected: usize,
 }
 
 /// Connection and account status
@@ -512,7 +512,7 @@ pub struct AppState {
     /// Show sent emails in inbox threads (conversation view)
     pub conversation_mode: bool,
 
-    // Modal overlay state (search, command, folder picker)
+    // Modal overlay state (search, command, help)
     pub modal: ModalState,
 
     // Folder state

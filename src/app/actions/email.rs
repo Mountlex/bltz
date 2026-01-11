@@ -11,9 +11,9 @@ use super::super::App;
 
 impl App {
     pub(super) async fn open_selected(&mut self) {
-        // Handle folder selection from picker
-        if self.state.modal.is_folder_picker() {
-            self.select_folder().await;
+        // Handle folder selection from sidebar
+        if self.state.folder.sidebar_visible && self.state.folder.sidebar_focused {
+            self.select_folder_from_sidebar().await;
             return;
         }
 
@@ -87,10 +87,6 @@ impl App {
     pub(super) async fn go_back(&mut self) {
         // If a modal is open, close it first
         match self.state.modal {
-            ModalState::FolderPicker => {
-                self.state.modal = ModalState::None;
-                return;
-            }
             ModalState::Command { .. } => {
                 self.exit_command_mode();
                 return;
@@ -152,26 +148,25 @@ impl App {
         }
     }
 
-    pub(super) async fn toggle_folder_picker(&mut self) {
-        if self.state.modal.is_folder_picker() {
-            self.state.modal = ModalState::None;
+    /// Toggle folder sidebar visibility and focus
+    pub(super) async fn toggle_folder_sidebar(&mut self) {
+        if self.state.folder.sidebar_visible {
+            // Hide sidebar and reset focus
+            self.state.folder.sidebar_visible = false;
+            self.state.folder.sidebar_focused = false;
         } else {
+            // Show sidebar and auto-focus
             // Request folder list if we don't have it
-            if self.state.folder.list.is_empty() {
-                if self.state.status.loading {
-                    self.state.set_status("Loading folders...");
-                } else {
-                    self.state.status.loading = true;
-                    self.state.set_status("Loading folders...");
-                    self.state.folder.picker_pending = true;
-                    if let Err(e) = self.accounts.send_command(ImapCommand::ListFolders).await {
-                        tracing::debug!("Failed to send ListFolders command: {}", e);
-                    }
+            if self.state.folder.list.is_empty() && !self.state.status.loading {
+                self.state.status.loading = true;
+                self.state.set_status("Loading folders...");
+                if let Err(e) = self.accounts.send_command(ImapCommand::ListFolders).await {
+                    tracing::debug!("Failed to send ListFolders command: {}", e);
                 }
-                return;
             }
-            self.state.modal = ModalState::FolderPicker;
-            // Set selection to current folder
+            self.state.folder.sidebar_visible = true;
+            self.state.folder.sidebar_focused = true;
+            // Sync sidebar_selected to current folder
             if let Some(idx) = self
                 .state
                 .folder
@@ -179,17 +174,18 @@ impl App {
                 .iter()
                 .position(|f| f == &self.state.folder.current)
             {
-                self.state.folder.selected = idx;
+                self.state.folder.sidebar_selected = idx;
             }
         }
     }
 
-    pub(super) async fn select_folder(&mut self) {
+    /// Select folder from sidebar and switch to it
+    pub(super) async fn select_folder_from_sidebar(&mut self) {
         if let Some(folder) = self
             .state
             .folder
             .list
-            .get(self.state.folder.selected)
+            .get(self.state.folder.sidebar_selected)
             .cloned()
         {
             if folder != self.state.folder.current {
@@ -220,7 +216,8 @@ impl App {
                     tracing::debug!("Failed to send SelectFolder command: {}", e);
                 }
             }
-            self.state.modal = ModalState::None;
+            // Return focus to thread list after selection
+            self.state.folder.sidebar_focused = false;
         }
     }
 

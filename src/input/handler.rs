@@ -49,9 +49,9 @@ fn handle_key(key: KeyEvent, state: &AppState, bindings: &KeyBindings) -> InputR
         return handle_help_input(key, bindings);
     }
 
-    // Check if we're in folder picker mode
-    if is_picker_mode(state) {
-        return handle_folder_picker(key, bindings);
+    // Check if folder sidebar is focused
+    if is_folder_sidebar_focused(state) {
+        return handle_folder_sidebar_input(key, bindings);
     }
 
     // Check if autocomplete is visible in composer
@@ -88,19 +88,29 @@ fn handle_polish_preview_input(key: KeyEvent) -> InputResult {
     }
 }
 
-fn handle_folder_picker(key: KeyEvent, bindings: &KeyBindings) -> InputResult {
-    // In folder picker, j/k navigate, Enter selects, Esc/` closes
+fn is_folder_sidebar_focused(state: &AppState) -> bool {
+    matches!(state.view, View::Inbox)
+        && state.folder.sidebar_visible
+        && state.folder.sidebar_focused
+}
+
+fn handle_folder_sidebar_input(key: KeyEvent, bindings: &KeyBindings) -> InputResult {
+    // In folder sidebar: j/k navigate, Enter selects, h/Left/Esc unfocuses, b toggles off
     if let Some(action) = bindings.get(&key) {
         match action {
             Action::Up | Action::Down => return InputResult::Action(action),
             Action::Open => return InputResult::Action(Action::Open),
+            Action::Left => return InputResult::Action(Action::Left), // Unfocus sidebar
+            Action::ToggleFolderSidebar => return InputResult::Action(action), // Toggle off
             _ => {}
         }
     }
 
     match key.code {
-        KeyCode::Esc | KeyCode::Char('`') => InputResult::Action(Action::Back),
         KeyCode::Enter => InputResult::Action(Action::Open),
+        KeyCode::Esc => InputResult::Action(Action::Left), // Unfocus sidebar
+        KeyCode::Left | KeyCode::Char('h') => InputResult::Action(Action::Left),
+        KeyCode::Right | KeyCode::Char('l') => InputResult::Action(Action::Right), // Focus threads
         _ => InputResult::Continue,
     }
 }
@@ -132,10 +142,6 @@ fn is_text_input_mode(state: &AppState) -> bool {
     matches!(state.view, View::Composer { .. })
         || state.modal.is_search()
         || state.modal.is_command()
-}
-
-fn is_picker_mode(state: &AppState) -> bool {
-    state.modal.is_folder_picker()
 }
 
 fn handle_text_input(key: KeyEvent, state: &AppState, bindings: &KeyBindings) -> InputResult {

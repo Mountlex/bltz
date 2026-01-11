@@ -6,10 +6,10 @@ use super::super::App;
 
 impl App {
     pub(crate) fn move_up(&mut self) {
-        // Handle folder picker navigation
-        if self.state.modal.is_folder_picker() {
-            if self.state.folder.selected > 0 {
-                self.state.folder.selected -= 1;
+        // Handle folder sidebar navigation
+        if self.state.folder.sidebar_visible && self.state.folder.sidebar_focused {
+            if self.state.folder.sidebar_selected > 0 {
+                self.state.folder.sidebar_selected -= 1;
             }
             return;
         }
@@ -43,10 +43,10 @@ impl App {
     }
 
     pub(crate) fn move_down(&mut self) {
-        // Handle folder picker navigation
-        if self.state.modal.is_folder_picker() {
-            if self.state.folder.selected < self.state.folder.list.len().saturating_sub(1) {
-                self.state.folder.selected += 1;
+        // Handle folder sidebar navigation
+        if self.state.folder.sidebar_visible && self.state.folder.sidebar_focused {
+            if self.state.folder.sidebar_selected < self.state.folder.list.len().saturating_sub(1) {
+                self.state.folder.sidebar_selected += 1;
             }
             return;
         }
@@ -80,8 +80,19 @@ impl App {
     }
 
     pub(super) async fn move_left(&mut self) {
+        // Handle sidebar focus: unfocus if focused
+        if self.state.folder.sidebar_visible && self.state.folder.sidebar_focused {
+            // Already in sidebar and pressing left - do nothing (stay in sidebar)
+            return;
+        }
+
         match &self.state.view {
             View::Inbox => {
+                // If sidebar is visible but not focused, focus it
+                if self.state.folder.sidebar_visible {
+                    self.state.folder.sidebar_focused = true;
+                    return;
+                }
                 self.state.collapse_or_move_left();
             }
             View::Reader { uid } => {
@@ -110,6 +121,12 @@ impl App {
     }
 
     pub(super) fn move_right(&mut self) {
+        // Handle sidebar focus: unfocus if focused
+        if self.state.folder.sidebar_visible && self.state.folder.sidebar_focused {
+            self.state.folder.sidebar_focused = false;
+            return;
+        }
+
         if let View::Inbox = &self.state.view {
             self.state.expand_thread();
         }

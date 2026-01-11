@@ -35,6 +35,13 @@ pub const DELETION_DELAY_SECS: u64 = 10;
 /// Below this width, only the email list is shown.
 pub const MIN_SPLIT_VIEW_WIDTH: u16 = 80;
 
+/// Fixed width of the folder sidebar pane in columns.
+pub const FOLDER_SIDEBAR_WIDTH: u16 = 20;
+
+/// Minimum terminal width to show folder sidebar with split view.
+/// Below this width, the sidebar is hidden even if enabled.
+pub const MIN_SIDEBAR_VIEW_WIDTH: u16 = 100;
+
 /// Debounce delay for body FTS search in milliseconds.
 /// Headers are searched instantly; body FTS runs after this delay.
 pub const SEARCH_DEBOUNCE_MS: u64 = 150;

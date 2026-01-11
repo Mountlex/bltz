@@ -1,10 +1,10 @@
 //! Inbox view rendering.
 //!
 //! This module is split into:
-//! - `mod.rs` - Main render_inbox, layout, preview, headers, body
+//! - `mod.rs` - Main render_inbox, layout, preview, headers, body, folder sidebar
 //! - `thread.rs` - Thread list rendering with virtual scrolling
 //! - `format.rs` - Text formatting utilities (highlight_matches)
-//! - `popups.rs` - Modal overlays (folder picker, help popup, command bar)
+//! - `popups.rs` - Modal overlays (help popup, command bar, confirm modal)
 
 mod format;
 mod popups;
@@ -13,21 +13,23 @@ mod thread;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
+    style::Modifier,
     text::{Line, Span, Text},
-    widgets::{Clear, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 
 use crate::app::state::{AppState, ModalState};
-use crate::constants::{MIN_SPLIT_VIEW_WIDTH, SPLIT_RATIO_MAX, SPLIT_RATIO_MIN};
+use crate::constants::{
+    FOLDER_SIDEBAR_WIDTH, MIN_SIDEBAR_VIEW_WIDTH, MIN_SPLIT_VIEW_WIDTH, SPLIT_RATIO_MAX,
+    SPLIT_RATIO_MIN,
+};
 
 use super::components::{render_email_headers, render_quoted_text};
 use super::status_bar::spinner_char;
 use super::theme::Theme;
 use super::widgets::{StatusInfo, enhanced_status_bar, error_bar, help_bar, sanitize_text};
 
-use popups::{
-    render_command_bar, render_confirm_modal, render_folder_picker, render_unified_help_popup,
-};
+use popups::{render_command_bar, render_confirm_modal, render_unified_help_popup};
 use thread::render_thread_list;
 
 pub fn render_inbox(frame: &mut Frame, state: &AppState) {
@@ -76,10 +78,49 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
         render_search_bar(frame, area, state);
     }
 
-    // Split view: thread list on left, content on right (if wide enough)
-    let show_preview = main_area.width >= MIN_SPLIT_VIEW_WIDTH;
+    // Determine if we can show the sidebar
+    let show_sidebar = state.folder.sidebar_visible && main_area.width >= MIN_SIDEBAR_VIEW_WIDTH;
 
-    if show_preview {
+    // Remaining width after sidebar
+    let remaining_width = if show_sidebar {
+        main_area.width.saturating_sub(FOLDER_SIDEBAR_WIDTH)
+    } else {
+        main_area.width
+    };
+    let show_preview = remaining_width >= MIN_SPLIT_VIEW_WIDTH;
+
+    if show_sidebar {
+        // 3-pane layout: [Folders | Threads | Preview]
+        let sidebar_split = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(FOLDER_SIDEBAR_WIDTH), // Folder sidebar
+                Constraint::Min(0),                       // Rest (threads + preview)
+            ])
+            .split(main_area);
+
+        // Render folder sidebar
+        render_folder_sidebar(frame, sidebar_split[0], state);
+
+        // Render threads and preview in remaining space
+        if show_preview {
+            let ratio = state.split_ratio.clamp(SPLIT_RATIO_MIN, SPLIT_RATIO_MAX);
+            let inner_split = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(ratio),       // Thread list
+                    Constraint::Percentage(100 - ratio), // Content preview
+                ])
+                .split(sidebar_split[1]);
+
+            render_thread_list(frame, inner_split[0], state, true);
+            render_preview(frame, inner_split[1], state);
+        } else {
+            // Just threads, no preview
+            render_thread_list(frame, sidebar_split[1], state, false);
+        }
+    } else if show_preview {
+        // Original 2-pane layout: [Threads | Preview]
         let ratio = state.split_ratio.clamp(SPLIT_RATIO_MIN, SPLIT_RATIO_MAX);
         let split = Layout::default()
             .direction(Direction::Horizontal)
@@ -89,13 +130,10 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
             ])
             .split(main_area);
 
-        // Thread list (left pane)
         render_thread_list(frame, split[0], state, true);
-
-        // Content preview (right pane)
         render_preview(frame, split[1], state);
     } else {
-        // Narrow terminal: only show thread list (no border)
+        // Narrow terminal: only show thread list
         render_thread_list(frame, main_area, state, false);
     }
 
@@ -104,8 +142,8 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
         render_command_bar(frame, help_area, state);
     } else if let Some(ref error) = state.status.error {
         error_bar(frame, help_area, error);
-    } else if state.modal.is_folder_picker() {
-        let hints = &[("j/k", "nav"), ("Enter", "select"), ("Esc", "close")];
+    } else if state.folder.sidebar_visible && state.folder.sidebar_focused {
+        let hints = &[("j/k", "nav"), ("Enter", "select"), ("l/Esc", "back")];
         help_bar(frame, help_area, hints);
     } else if state.modal.is_search() {
         let hints = &[("Type", "search"), ("Enter/Esc", "done")];
@@ -114,11 +152,6 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
         // Default help bar for discoverability
         let hints = &[("j/k", "nav"), ("Enter", "open"), (".", "help")];
         help_bar(frame, help_area, hints);
-    }
-
-    // Folder picker overlay (rendered last so it appears on top)
-    if state.modal.is_folder_picker() {
-        render_folder_picker(frame, frame.area(), state);
     }
 
     // Confirmation modal for destructive commands
@@ -277,4 +310,94 @@ fn render_email_body(frame: &mut Frame, area: Rect, state: &AppState) {
         .scroll((scroll, 0));
 
     frame.render_widget(paragraph, area);
+}
+
+/// Render the folder sidebar
+fn render_folder_sidebar(frame: &mut Frame, area: Rect, state: &AppState) {
+    use super::theme::symbols;
+
+    let is_focused = state.folder.sidebar_focused;
+
+    // Create block with border style based on focus
+    let border_style = if is_focused {
+        Theme::border_focused()
+    } else {
+        Theme::border()
+    };
+
+    let block = Block::default()
+        .title(" Folders ")
+        .borders(Borders::RIGHT)
+        .border_style(border_style);
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if state.folder.list.is_empty() {
+        let msg = if state.status.loading {
+            "Loading..."
+        } else {
+            "No folders"
+        };
+        let paragraph = Paragraph::new(msg)
+            .style(Theme::text_muted())
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(paragraph, inner);
+        return;
+    }
+
+    // Calculate visible range with scrolling
+    let visible_height = inner.height as usize;
+    let total_items = state.folder.list.len();
+    let selected = state.folder.sidebar_selected;
+
+    // Calculate scroll offset to keep selected item visible
+    let scroll_offset = if selected >= visible_height {
+        selected.saturating_sub(visible_height / 2)
+    } else {
+        0
+    }
+    .min(total_items.saturating_sub(visible_height));
+
+    // Build folder list items
+    let items: Vec<ListItem> = state
+        .folder
+        .list
+        .iter()
+        .enumerate()
+        .skip(scroll_offset)
+        .take(visible_height)
+        .map(|(idx, folder)| {
+            let is_selected = is_focused && idx == selected;
+            let is_current = folder == &state.folder.current;
+
+            let style = if is_selected {
+                Theme::selected()
+            } else if is_current {
+                Theme::text_accent().add_modifier(Modifier::BOLD)
+            } else {
+                Theme::text()
+            };
+
+            // Show current folder indicator
+            let prefix = if is_current {
+                format!("{} ", symbols::CURRENT_FOLDER)
+            } else {
+                "  ".to_string()
+            };
+
+            // Truncate folder name to fit
+            let max_name_len = inner.width.saturating_sub(3) as usize;
+            let folder_display = if folder.len() > max_name_len {
+                format!("{}…", &folder[..max_name_len.saturating_sub(1)])
+            } else {
+                folder.clone()
+            };
+
+            ListItem::new(format!("{}{}", prefix, folder_display)).style(style)
+        })
+        .collect();
+
+    let list = List::new(items);
+    frame.render_widget(list, inner);
 }

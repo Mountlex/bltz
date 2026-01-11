@@ -114,10 +114,10 @@ impl App {
                 }
             }
 
-            // Folder picker
-            Action::FolderPicker => {
+            // Folder sidebar
+            Action::ToggleFolderSidebar => {
                 if matches!(self.state.view, View::Inbox) {
-                    self.toggle_folder_picker().await;
+                    self.toggle_folder_sidebar().await;
                 }
             }
 
