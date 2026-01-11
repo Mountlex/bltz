@@ -264,8 +264,11 @@ async fn handle_command(
                 return;
             }
 
-            // Select the folder if it differs from current (needed for conversation mode)
+            // Save original folder for restoration after operation
+            let original_folder = current_folder.clone();
             let needs_folder_switch = folder != *current_folder;
+
+            // Select the folder if it differs from current (needed for conversation mode)
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
                 tracing::warn!("Failed to select folder '{}' for body fetch: {}", folder, e);
                 event_tx
@@ -300,10 +303,15 @@ async fn handle_command(
                 }
             }
 
-            // Switch back to original folder for IDLE
-            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
-                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
-            }
+            // Switch back to original folder for IDLE (with recovery on failure)
+            restore_folder_after_operation(
+                client,
+                current_folder,
+                &original_folder,
+                needs_folder_switch,
+                event_tx,
+            )
+            .await;
         }
         ImapCommand::FetchBodies { uids, folder } => {
             // Use the provided folder for cache key
@@ -329,8 +337,11 @@ async fn handle_command(
                 }
             }
 
-            // Select the folder if it differs from current
+            // Save original folder for restoration after operation
+            let original_folder = current_folder.clone();
             let needs_folder_switch = folder != *current_folder;
+
+            // Select the folder if it differs from current
             if needs_folder_switch
                 && !uids_to_fetch.is_empty()
                 && let Err(e) = client.select_folder(&folder).await
@@ -385,17 +396,25 @@ async fn handle_command(
                 }
             }
 
-            // Switch back to original folder for IDLE
-            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
-                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
-            }
+            // Switch back to original folder for IDLE (with recovery on failure)
+            restore_folder_after_operation(
+                client,
+                current_folder,
+                &original_folder,
+                needs_folder_switch,
+                event_tx,
+            )
+            .await;
         }
         ImapCommand::SetFlag { uid, flag, folder } => {
             // Use folder-specific cache key (important for conversation mode)
             let flag_cache_key = folder_cache_key(account_id, &folder);
 
-            // Switch to correct folder if needed
+            // Save original folder for restoration after operation
+            let original_folder = current_folder.clone();
             let needs_folder_switch = folder != *current_folder;
+
+            // Switch to correct folder if needed
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
                 tracing::error!("Failed to select folder '{}' for flag: {}", folder, e);
                 event_tx
@@ -444,17 +463,25 @@ async fn handle_command(
                 }
             }
 
-            // Switch back to original folder for IDLE
-            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
-                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
-            }
+            // Switch back to original folder for IDLE (with recovery on failure)
+            restore_folder_after_operation(
+                client,
+                current_folder,
+                &original_folder,
+                needs_folder_switch,
+                event_tx,
+            )
+            .await;
         }
         ImapCommand::RemoveFlag { uid, flag, folder } => {
             // Use folder-specific cache key (important for conversation mode)
             let flag_cache_key = folder_cache_key(account_id, &folder);
 
-            // Switch to correct folder if needed
+            // Save original folder for restoration after operation
+            let original_folder = current_folder.clone();
             let needs_folder_switch = folder != *current_folder;
+
+            // Switch to correct folder if needed
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
                 tracing::error!("Failed to select folder '{}' for flag: {}", folder, e);
                 event_tx
@@ -503,17 +530,25 @@ async fn handle_command(
                 }
             }
 
-            // Switch back to original folder for IDLE
-            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
-                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
-            }
+            // Switch back to original folder for IDLE (with recovery on failure)
+            restore_folder_after_operation(
+                client,
+                current_folder,
+                &original_folder,
+                needs_folder_switch,
+                event_tx,
+            )
+            .await;
         }
         ImapCommand::Delete { uid, folder } => {
             // Use folder-specific cache key (important for conversation mode)
             let delete_cache_key = folder_cache_key(account_id, &folder);
 
-            // Switch to correct folder if needed
+            // Save original folder for restoration after operation
+            let original_folder = current_folder.clone();
             let needs_folder_switch = folder != *current_folder;
+
+            // Switch to correct folder if needed
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
                 tracing::error!("Failed to select folder '{}' for delete: {}", folder, e);
                 event_tx
@@ -546,10 +581,15 @@ async fn handle_command(
                 }
             }
 
-            // Switch back to original folder for IDLE
-            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
-                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
-            }
+            // Switch back to original folder for IDLE (with recovery on failure)
+            restore_folder_after_operation(
+                client,
+                current_folder,
+                &original_folder,
+                needs_folder_switch,
+                event_tx,
+            )
+            .await;
         }
         ImapCommand::SelectFolder { folder } => {
             match client.select_folder(&folder).await {
@@ -599,30 +639,15 @@ async fn handle_command(
                     .ok();
             }
 
-            // Re-select original folder for IDLE to work on correct mailbox
-            if folder_changed {
-                match client.select_folder(&original_folder).await {
-                    Ok(_) => {
-                        *current_folder = original_folder;
-                    }
-                    Err(e) => {
-                        // Critical: IDLE will monitor wrong folder until reconnect
-                        tracing::error!(
-                            "Failed to restore folder '{}' after prefetch, IDLE may be on wrong folder: {}",
-                            original_folder,
-                            e
-                        );
-                        // Send error event to notify UI - connection may need reset
-                        event_tx
-                            .send(ImapEvent::Error(format!(
-                                "Prefetch caused folder desync - may need to refresh: {}",
-                                e
-                            )))
-                            .await
-                            .ok();
-                    }
-                }
-            }
+            // Re-select original folder for IDLE (with recovery on failure)
+            restore_folder_after_operation(
+                client,
+                current_folder,
+                &original_folder,
+                folder_changed,
+                event_tx,
+            )
+            .await;
         }
         ImapCommand::FetchAttachment {
             uid,
@@ -650,8 +675,11 @@ async fn handle_command(
                 }
             }
 
-            // Need to fetch from server
+            // Save original folder for restoration after operation
+            let original_folder = current_folder.clone();
             let needs_folder_switch = folder != *current_folder;
+
+            // Need to fetch from server
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
                 event_tx
                     .send(ImapEvent::AttachmentFetchFailed {
@@ -739,10 +767,15 @@ async fn handle_command(
                 }
             }
 
-            // Switch back to original folder
-            if needs_folder_switch && let Err(e) = client.select_folder(current_folder).await {
-                tracing::warn!("Failed to re-select folder '{}': {}", current_folder, e);
-            }
+            // Switch back to original folder (with recovery on failure)
+            restore_folder_after_operation(
+                client,
+                current_folder,
+                &original_folder,
+                needs_folder_switch,
+                event_tx,
+            )
+            .await;
         }
         ImapCommand::Shutdown => {
             // Handled in the main loop
@@ -798,6 +831,75 @@ async fn reconnect(client: &mut ImapClient) -> Result<()> {
     client.disconnect().await.ok();
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     client.connect().await
+}
+
+/// Attempt to restore the original folder after a temporary folder switch.
+/// If restoration fails, forces a reconnect to recover from desync state.
+/// Returns true if folder was successfully restored (or didn't need switching).
+async fn restore_folder_after_operation(
+    client: &mut ImapClient,
+    current_folder: &mut String,
+    original_folder: &str,
+    needs_folder_switch: bool,
+    event_tx: &mpsc::Sender<ImapEvent>,
+) -> bool {
+    if !needs_folder_switch {
+        return true;
+    }
+
+    match client.select_folder(original_folder).await {
+        Ok(_) => {
+            // Successfully restored - ensure tracker is correct
+            *current_folder = original_folder.to_string();
+            true
+        }
+        Err(e) => {
+            tracing::error!(
+                "Failed to restore folder '{}' after operation, forcing reconnect: {}",
+                original_folder,
+                e
+            );
+            // Critical: IDLE would monitor wrong folder. Force reconnect to recover.
+            if let Err(reconnect_err) = reconnect(client).await {
+                event_tx
+                    .send(ImapEvent::Error(format!(
+                        "Folder desync recovery failed: {}",
+                        reconnect_err
+                    )))
+                    .await
+                    .ok();
+                return false;
+            }
+
+            // After reconnect, try to select the original folder again
+            match client.select_folder(original_folder).await {
+                Ok(_) => {
+                    *current_folder = original_folder.to_string();
+                    tracing::info!("Folder '{}' restored after reconnect", original_folder);
+                    true
+                }
+                Err(e2) => {
+                    // Even after reconnect we can't select - fall back to INBOX
+                    tracing::error!(
+                        "Cannot restore folder '{}' even after reconnect: {}, falling back to INBOX",
+                        original_folder,
+                        e2
+                    );
+                    if client.select_folder("INBOX").await.is_ok() {
+                        *current_folder = "INBOX".to_string();
+                        event_tx
+                            .send(ImapEvent::Error(format!(
+                                "Folder '{}' unavailable, switched to INBOX",
+                                original_folder
+                            )))
+                            .await
+                            .ok();
+                    }
+                    false
+                }
+            }
+        }
+    }
 }
 
 //

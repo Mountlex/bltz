@@ -25,8 +25,12 @@ use std::time::Duration;
 use super::sync::SyncState;
 use crate::mail::types::{Attachment, EmailBody, EmailFlags, EmailHeader};
 
-/// Connection pool size - allows concurrent reads.
-const POOL_SIZE: u32 = 4;
+/// Connection pool size - allows concurrent reads and writes.
+/// Sized for multi-account usage with concurrent operations:
+/// - Each IMAP actor may hold a connection during sync/flag operations
+/// - Prefetch operations run in parallel with user actions
+/// - FTS search queries can run alongside cache updates
+const POOL_SIZE: u32 = 16;
 
 /// Moka cache settings for hot data.
 const BODY_CACHE_MAX_CAPACITY: u64 = 600; // Max cached bodies (slightly above page size of 500)

@@ -36,8 +36,10 @@ impl ContactsDb {
             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
             .foreign_keys(true);
 
+        // Pool size of 4 allows concurrent autocomplete searches during compose
+        // while other operations (add contact, get all) may be running
         let pool = SqlitePoolOptions::new()
-            .max_connections(2)
+            .max_connections(4)
             .connect_with(options)
             .await
             .context("Failed to create contacts connection pool")?;

@@ -237,56 +237,82 @@ pub async fn update_flags(
 
 /// Atomically add a flag using SQL bitwise OR (avoids read-modify-write race).
 /// Returns the new flags value.
+/// Uses a transaction to ensure UPDATE and SELECT are atomic (no TOCTOU race).
 pub async fn add_flag(
     pool: &SqlitePool,
     account_id: &str,
     uid: u32,
     flag: EmailFlags,
 ) -> Result<EmailFlags> {
+    // Use transaction to make UPDATE + SELECT atomic
+    let mut tx = pool.begin().await?;
+
     // Use bitwise OR to add flag atomically
     sqlx::query("UPDATE emails SET flags = flags | ? WHERE account_id = ? AND uid = ?")
         .bind(flag.bits() as i64)
         .bind(account_id)
         .bind(uid as i64)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
-    // Fetch the new flags value
+    // Fetch the new flags value within same transaction
     let row: Option<i64> =
         sqlx::query_scalar("SELECT flags FROM emails WHERE account_id = ? AND uid = ?")
             .bind(account_id)
             .bind(uid as i64)
-            .fetch_optional(pool)
+            .fetch_optional(&mut *tx)
             .await?;
 
-    Ok(EmailFlags::from_bits_truncate(row.unwrap_or(0) as u32))
+    tx.commit().await?;
+
+    // Return None case as error - email was deleted between UPDATE and SELECT
+    match row {
+        Some(flags) => Ok(EmailFlags::from_bits_truncate(flags as u32)),
+        None => Err(anyhow::anyhow!(
+            "Email not found after flag update (uid={})",
+            uid
+        )),
+    }
 }
 
 /// Atomically remove a flag using SQL bitwise AND NOT (avoids read-modify-write race).
 /// Returns the new flags value.
+/// Uses a transaction to ensure UPDATE and SELECT are atomic (no TOCTOU race).
 pub async fn remove_flag(
     pool: &SqlitePool,
     account_id: &str,
     uid: u32,
     flag: EmailFlags,
 ) -> Result<EmailFlags> {
+    // Use transaction to make UPDATE + SELECT atomic
+    let mut tx = pool.begin().await?;
+
     // Use bitwise AND with NOT to remove flag atomically
     sqlx::query("UPDATE emails SET flags = flags & ~? WHERE account_id = ? AND uid = ?")
         .bind(flag.bits() as i64)
         .bind(account_id)
         .bind(uid as i64)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
-    // Fetch the new flags value
+    // Fetch the new flags value within same transaction
     let row: Option<i64> =
         sqlx::query_scalar("SELECT flags FROM emails WHERE account_id = ? AND uid = ?")
             .bind(account_id)
             .bind(uid as i64)
-            .fetch_optional(pool)
+            .fetch_optional(&mut *tx)
             .await?;
 
-    Ok(EmailFlags::from_bits_truncate(row.unwrap_or(0) as u32))
+    tx.commit().await?;
+
+    // Return None case as error - email was deleted between UPDATE and SELECT
+    match row {
+        Some(flags) => Ok(EmailFlags::from_bits_truncate(flags as u32)),
+        None => Err(anyhow::anyhow!(
+            "Email not found after flag update (uid={})",
+            uid
+        )),
+    }
 }
 
 /// Get all UIDs and their flags from cache (for flag sync).
