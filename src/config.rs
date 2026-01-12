@@ -161,6 +161,7 @@ pub enum KeybindingMode {
 #[serde(rename_all = "lowercase")]
 pub enum ThemeVariant {
     #[default]
+    Modern,
     Dark,
     #[serde(rename = "high-contrast")]
     HighContrast,

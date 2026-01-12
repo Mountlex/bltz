@@ -4,6 +4,7 @@
 //! used throughout the application.
 
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::widgets::BorderType;
 use std::sync::OnceLock;
 
 use crate::config::ThemeVariant;
@@ -17,8 +18,70 @@ pub fn init_theme(variant: ThemeVariant) {
 }
 
 /// Get the current theme variant
-fn current_theme() -> ThemeVariant {
+pub fn current_theme() -> ThemeVariant {
     THEME_VARIANT.get().copied().unwrap_or_default()
+}
+
+/// Check if the terminal supports true color (24-bit RGB)
+pub fn supports_true_color() -> bool {
+    std::env::var("COLORTERM")
+        .map(|v| v == "truecolor" || v == "24bit")
+        .unwrap_or(false)
+}
+
+/// Catppuccin Mocha color palette for the Modern theme
+#[allow(dead_code)]
+mod catppuccin {
+    use super::Color;
+
+    // Background layers (darkest to lightest)
+    pub const BASE: Color = Color::Rgb(30, 30, 46); // #1e1e2e - main background
+    pub const MANTLE: Color = Color::Rgb(24, 24, 37); // #181825 - status bar, panels
+    pub const SURFACE0: Color = Color::Rgb(49, 50, 68); // #313244 - borders
+    pub const SURFACE1: Color = Color::Rgb(69, 71, 90); // #45475a - selection
+    pub const SURFACE2: Color = Color::Rgb(88, 91, 112); // #585b70 - active borders
+
+    // Text colors
+    pub const TEXT: Color = Color::Rgb(205, 214, 244); // #cdd6f4 - primary
+    pub const SUBTEXT1: Color = Color::Rgb(186, 194, 222); // #bac2de - secondary
+    pub const SUBTEXT0: Color = Color::Rgb(166, 173, 200); // #a6adc8 - tertiary
+    pub const OVERLAY0: Color = Color::Rgb(108, 112, 134); // #6c7086 - muted/disabled
+
+    // Accent colors
+    pub const LAVENDER: Color = Color::Rgb(180, 190, 254); // #b4befe - focused borders
+    pub const BLUE: Color = Color::Rgb(137, 180, 250); // #89b4fa - links, accent
+    pub const TEAL: Color = Color::Rgb(148, 226, 213); // #94e2d5 - secondary accent
+    pub const GREEN: Color = Color::Rgb(166, 227, 161); // #a6e3a1 - success, connected
+    pub const YELLOW: Color = Color::Rgb(249, 226, 175); // #f9e2af - warnings, stars
+    pub const PEACH: Color = Color::Rgb(250, 179, 135); // #fab387 - thread badges
+    pub const RED: Color = Color::Rgb(243, 139, 168); // #f38ba8 - errors
+    pub const MAUVE: Color = Color::Rgb(203, 166, 247); // #cba6f7 - unread indicator
+}
+
+/// Border type helpers for different UI contexts
+pub mod borders {
+    use super::*;
+
+    /// Border type for popups and modals (rounded in Modern theme)
+    pub fn popup() -> BorderType {
+        match current_theme() {
+            ThemeVariant::Modern => BorderType::Rounded,
+            _ => BorderType::Plain,
+        }
+    }
+
+    /// Border type for focused input fields (rounded in Modern theme)
+    pub fn input_focused() -> BorderType {
+        match current_theme() {
+            ThemeVariant::Modern => BorderType::Rounded,
+            _ => BorderType::Plain,
+        }
+    }
+
+    /// Border type for main panels (always plain for clean look)
+    pub fn panel() -> BorderType {
+        BorderType::Plain
+    }
 }
 
 /// Color palette - colors that vary by theme
@@ -28,6 +91,7 @@ pub mod colors {
     // Selection
     pub fn bg_selection() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::SURFACE1,
             ThemeVariant::Dark => Color::Blue,
             ThemeVariant::HighContrast => Color::LightBlue,
         }
@@ -36,22 +100,30 @@ pub mod colors {
     // Status bars
     pub fn bg_status() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::MANTLE,
             ThemeVariant::Dark => Color::DarkGray,
             ThemeVariant::HighContrast => Color::Black,
         }
     }
 
     pub fn bg_error() -> Color {
-        Color::Red
+        match current_theme() {
+            ThemeVariant::Modern => catppuccin::RED,
+            _ => Color::Red,
+        }
     }
 
     // Text colors
     pub fn fg_primary() -> Color {
-        Color::White
+        match current_theme() {
+            ThemeVariant::Modern => catppuccin::TEXT,
+            _ => Color::White,
+        }
     }
 
     pub fn fg_secondary() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::SUBTEXT1,
             ThemeVariant::Dark => Color::Gray,
             ThemeVariant::HighContrast => Color::White,
         }
@@ -59,6 +131,7 @@ pub mod colors {
 
     pub fn fg_muted() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::OVERLAY0,
             ThemeVariant::Dark => Color::Gray,
             ThemeVariant::HighContrast => Color::Gray,
         }
@@ -66,6 +139,7 @@ pub mod colors {
 
     pub fn fg_accent() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::BLUE,
             ThemeVariant::Dark => Color::Cyan,
             ThemeVariant::HighContrast => Color::LightCyan,
         }
@@ -73,6 +147,7 @@ pub mod colors {
 
     pub fn fg_warning() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::YELLOW,
             ThemeVariant::Dark => Color::Yellow,
             ThemeVariant::HighContrast => Color::LightYellow,
         }
@@ -81,6 +156,7 @@ pub mod colors {
     // Semantic
     pub fn unread_indicator() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::MAUVE,
             ThemeVariant::Dark => Color::Magenta,
             ThemeVariant::HighContrast => Color::LightMagenta,
         }
@@ -88,6 +164,7 @@ pub mod colors {
 
     pub fn thread_badge() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::PEACH,
             ThemeVariant::Dark => Color::Yellow,
             ThemeVariant::HighContrast => Color::LightYellow,
         }
@@ -95,6 +172,7 @@ pub mod colors {
 
     pub fn border() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::SURFACE0,
             ThemeVariant::Dark => Color::DarkGray,
             ThemeVariant::HighContrast => Color::Gray,
         }
@@ -102,6 +180,7 @@ pub mod colors {
 
     pub fn border_focused() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::LAVENDER,
             ThemeVariant::Dark => Color::Cyan,
             ThemeVariant::HighContrast => Color::LightCyan,
         }
@@ -110,6 +189,7 @@ pub mod colors {
     // Status colors
     pub fn status_connected() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::GREEN,
             ThemeVariant::Dark => Color::Green,
             ThemeVariant::HighContrast => Color::LightGreen,
         }
@@ -117,6 +197,7 @@ pub mod colors {
 
     pub fn status_disconnected() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::RED,
             ThemeVariant::Dark => Color::Red,
             ThemeVariant::HighContrast => Color::LightRed,
         }
@@ -124,6 +205,7 @@ pub mod colors {
 
     pub fn status_syncing() -> Color {
         match current_theme() {
+            ThemeVariant::Modern => catppuccin::YELLOW,
             ThemeVariant::Dark => Color::Yellow,
             ThemeVariant::HighContrast => Color::LightYellow,
         }

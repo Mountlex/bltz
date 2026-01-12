@@ -13,7 +13,7 @@ use crate::command::{CommandHelp, CommandResult, PendingCommand};
 use crate::input::KeybindingEntry;
 
 use super::super::components::centered_rect_constrained;
-use super::super::theme::{Theme, colors};
+use super::super::theme::{Theme, borders, colors};
 
 pub fn render_command_bar(frame: &mut Frame, area: Rect, state: &AppState) {
     // Confirmation is now shown in modal, so skip command bar rendering for confirmations
@@ -72,6 +72,7 @@ pub fn render_confirm_modal(frame: &mut Frame, area: Rect, pending: &PendingComm
         .title(title)
         .title_bottom(" y confirm │ n/Esc cancel ")
         .borders(Borders::ALL)
+        .border_type(borders::popup())
         .border_style(Style::default().fg(colors::fg_warning()));
 
     let inner = block.inner(popup_area);
@@ -126,6 +127,7 @@ pub fn render_unified_help_popup(
         .title(" Help ")
         .title_bottom(" j/k scroll │ . or Esc close ")
         .borders(Borders::ALL)
+        .border_type(borders::popup())
         .border_style(Theme::border_focused());
 
     let inner = block.inner(popup_area);

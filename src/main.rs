@@ -330,8 +330,20 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // Initialize theme from config
-            crate::ui::theme::init_theme(config.ui.theme);
+            // Initialize theme from config, with true color detection
+            let theme = if config.ui.theme == crate::config::ThemeVariant::Modern
+                && !crate::ui::theme::supports_true_color()
+            {
+                tracing::info!(
+                    "Modern theme requires true color support (COLORTERM=truecolor). \
+                     Falling back to Dark theme."
+                );
+                crate::config::ThemeVariant::Dark
+            } else {
+                tracing::debug!("Using theme: {:?}", config.ui.theme);
+                config.ui.theme
+            };
+            crate::ui::theme::init_theme(theme);
 
             // Get the default account
             let account = config.default_account().ok_or_else(|| {

@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 
-use super::theme::Theme;
+use super::theme::{Theme, borders};
 use super::widgets::{error_bar, help_bar, status_bar};
 use crate::app::state::{AppState, ComposerField, PolishPreview};
 use crate::mail::types::ComposeEmail;
@@ -229,6 +229,7 @@ fn render_autocomplete_dropdown(frame: &mut Frame, field_area: Rect, state: &App
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
+            .border_type(borders::popup())
             .border_style(Theme::border_focused()),
     );
 
@@ -260,8 +261,15 @@ fn render_field(frame: &mut Frame, area: Rect, label: &str, value: &str, focused
         Theme::border()
     };
 
+    let border_type = if focused {
+        borders::input_focused()
+    } else {
+        borders::panel()
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(border_type)
         .border_style(border_style)
         .title(format!(" {} ", label));
 
@@ -291,11 +299,18 @@ fn render_body_field(frame: &mut Frame, area: Rect, body: &str, focused: bool) {
         Theme::border()
     };
 
+    let border_type = if focused {
+        borders::input_focused()
+    } else {
+        borders::panel()
+    };
+
     let char_count = body.chars().count();
     let title = format!(" Body ({} chars) ", char_count);
 
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(border_type)
         .border_style(border_style)
         .title(title);
 
@@ -345,6 +360,7 @@ fn render_polish_preview(frame: &mut Frame, preview: &PolishPreview) {
     };
     let title_block = Block::default()
         .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+        .border_type(borders::popup())
         .border_style(Theme::border_focused())
         .title(title);
     frame.render_widget(title_block, chunks[0]);
@@ -386,6 +402,7 @@ fn render_polish_preview(frame: &mut Frame, preview: &PolishPreview) {
     // Help bar
     let help_block = Block::default()
         .borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT)
+        .border_type(borders::popup())
         .border_style(Theme::border_focused());
     frame.render_widget(help_block, chunks[2]);
 

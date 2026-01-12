@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::components::centered_rect_constrained;
-use super::theme::{Theme, with_selection_bg};
+use super::theme::{Theme, borders, with_selection_bg};
 use super::widgets::{error_bar, help_bar, truncate_string};
 use crate::app::state::AppState;
 
@@ -198,6 +198,7 @@ fn render_contact_edit_popup(frame: &mut Frame, area: Rect, state: &AppState) {
     let block = Block::default()
         .title(" Edit Contact Name ")
         .borders(Borders::ALL)
+        .border_type(borders::popup())
         .border_style(Theme::border_focused());
 
     let inner = block.inner(popup_area);

@@ -3,7 +3,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
-use super::theme::Theme;
+use super::theme::{Theme, borders};
 use crate::app::state::{AddAccountAuth, AddAccountData, AddAccountStep, AppState};
 
 /// Get the current step number and total steps for progress display
@@ -48,6 +48,7 @@ pub fn render_add_account(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
+        .border_type(borders::popup())
         .border_style(Theme::border_focused());
 
     let inner_area = block.inner(dialog_area);
