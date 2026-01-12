@@ -4,7 +4,7 @@ use anyhow::Result;
 use crossterm::event;
 use std::time::{Duration, Instant};
 
-use crate::constants::{DELETION_DELAY_SECS, SEARCH_DEBOUNCE_MS};
+use crate::constants::{DELETION_DELAY_SECS, SEARCH_DEBOUNCE_MS, THEME_CHECK_INTERVAL_SECS};
 use crate::input::{InputResult, handle_input};
 use crate::mail::{
     ImapCommand, ImapEvent, folder_cache_key, group_into_threads, merge_into_threads,
@@ -31,6 +31,11 @@ impl App {
 
             // Clear expired errors
             if self.state.clear_error_if_expired() {
+                self.dirty = true;
+            }
+
+            // Check for system theme changes (every few seconds)
+            if self.check_system_theme_change() {
                 self.dirty = true;
             }
 
@@ -579,5 +584,63 @@ impl App {
         });
 
         had_deletions
+    }
+
+    /// Check if system theme (dark/light mode) has changed and update theme if needed.
+    /// Returns true if the theme was changed.
+    fn check_system_theme_change(&mut self) -> bool {
+        // Only check every few seconds to avoid excessive gsettings calls
+        if self.last_theme_check.elapsed().as_secs() < THEME_CHECK_INTERVAL_SECS {
+            return false;
+        }
+        self.last_theme_check = Instant::now();
+
+        // Skip if user has explicit theme override in config
+        if self.config.ui.theme.is_some() {
+            return false;
+        }
+
+        // Detect current system dark mode
+        let is_dark = crate::ui::theme::detect_system_dark_mode();
+
+        // Check if it changed
+        if is_dark == self.last_system_dark_mode {
+            return false;
+        }
+
+        // System theme changed - update the app theme
+        self.last_system_dark_mode = is_dark;
+        let new_theme = if is_dark {
+            self.config.ui.dark_theme
+        } else {
+            self.config.ui.light_theme
+        };
+
+        // Apply true color fallbacks
+        let final_theme = if !crate::ui::theme::supports_true_color() {
+            match new_theme {
+                crate::config::ThemeVariant::Modern
+                | crate::config::ThemeVariant::SolarizedDark
+                | crate::config::ThemeVariant::TokyoNight
+                | crate::config::ThemeVariant::RosePine => crate::config::ThemeVariant::Dark,
+                crate::config::ThemeVariant::SolarizedLight
+                | crate::config::ThemeVariant::TokyoDay
+                | crate::config::ThemeVariant::RosePineDawn => {
+                    crate::config::ThemeVariant::HighContrast
+                }
+                other => other,
+            }
+        } else {
+            new_theme
+        };
+
+        tracing::info!(
+            "System theme changed to {} mode, switching to {:?}",
+            if is_dark { "dark" } else { "light" },
+            final_theme
+        );
+
+        crate::ui::theme::set_theme(final_theme);
+        true
     }
 }

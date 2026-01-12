@@ -45,6 +45,7 @@ pub enum Action {
     ExecuteCommand,
     ConfirmCommand,
     CancelCommand,
+    CommandTabComplete,
 
     // Composer
     NextField,
@@ -386,6 +387,7 @@ fn action_description(action: &Action) -> String {
         Action::ExecuteCommand => "Execute command".to_string(),
         Action::ConfirmCommand => "Confirm command".to_string(),
         Action::CancelCommand => "Cancel command".to_string(),
+        Action::CommandTabComplete => "Tab completion".to_string(),
         Action::NextField => "Next field".to_string(),
         Action::PrevField => "Previous field".to_string(),
         Action::Send => "Send email".to_string(),
@@ -451,7 +453,8 @@ fn action_category(action: &Action) -> &'static str {
         Action::Command
         | Action::ExecuteCommand
         | Action::ConfirmCommand
-        | Action::CancelCommand => "Commands",
+        | Action::CancelCommand
+        | Action::CommandTabComplete => "Commands",
 
         Action::NextField
         | Action::PrevField

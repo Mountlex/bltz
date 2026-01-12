@@ -128,6 +128,7 @@ impl App {
                         input: String::new(),
                         result: None,
                         pending: None,
+                        completion: None,
                     };
                 }
             }
@@ -139,6 +140,9 @@ impl App {
             }
             Action::CancelCommand => {
                 self.cancel_pending_command();
+            }
+            Action::CommandTabComplete => {
+                self.handle_tab_completion();
             }
 
             // Composer

@@ -13,19 +13,33 @@ use crate::constants::SCROLL_TARGET_FRACTION;
 use crate::mail::EmailThread;
 use crate::mail::types::EmailHeader;
 
-use super::super::theme::{Theme, colors, symbols, with_selection_bg};
+use super::super::theme::{self, Theme, colors, symbols, with_selection_bg};
 use super::super::widgets::{display_width, format_relative_date, truncate_string};
 use super::format::highlight_matches;
+
+/// Options for rendering a thread header
+pub struct ThreadHeaderOptions<'a> {
+    pub selected: bool,
+    pub width: u16,
+    pub expanded: bool,
+    pub search_query: &'a str,
+    pub match_type: MatchType,
+    pub use_modern: bool,
+}
 
 pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_border: bool) {
     let inner = if show_border {
         let block = Block::default()
             .borders(Borders::RIGHT)
-            .border_style(Theme::border());
+            .border_style(Theme::border())
+            .style(Theme::main_bg());
         let inner = block.inner(area);
         frame.render_widget(block, area);
         inner
     } else {
+        // Even without border, fill area with main background
+        let bg_block = Block::default().style(Theme::main_bg());
+        frame.render_widget(bg_block, area);
         area
     };
 
@@ -49,14 +63,23 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
     }
 
     let visible_lines = inner.height as usize;
+    let use_modern = theme::use_modern_spacing();
+
+    // Line heights: modern theme adds 1 gap line between threads
+    let content_lines = 2; // Content lines per item (header or email)
+    let gap_lines = if use_modern { 1 } else { 0 }; // Gap between threads
 
     // Phase 1: Calculate line counts and find selected position (no allocations)
-    // Each thread/email header takes 2 lines
     let mut total_lines = 0usize;
     let mut selected_line = 0usize;
     let mut thread_line_offsets: Vec<usize> = Vec::with_capacity(visible.len());
 
     for (thread_idx, thread) in visible.iter().enumerate() {
+        // Add gap line before each thread (except first)
+        if use_modern && thread_idx > 0 {
+            total_lines += gap_lines;
+        }
+
         thread_line_offsets.push(total_lines);
         let is_current_thread = thread_idx == state.thread.selected;
         let is_expanded = state.is_thread_expanded(&thread.id);
@@ -66,22 +89,22 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
             if is_current_thread && state.thread.selected_in_thread == 0 {
                 selected_line = total_lines;
             }
-            total_lines += 2;
+            total_lines += content_lines;
 
             // Each email takes 2 lines
             let email_count = thread.email_indices.len();
             if is_current_thread && state.thread.selected_in_thread > 0 {
                 // selected_in_thread is 1-indexed for emails in expanded thread
                 let email_offset = state.thread.selected_in_thread.saturating_sub(1);
-                selected_line = total_lines + (email_offset * 2);
+                selected_line = total_lines + (email_offset * content_lines);
             }
-            total_lines += email_count * 2;
+            total_lines += email_count * content_lines;
         } else {
             // Collapsed thread takes 2 lines
             if is_current_thread {
                 selected_line = total_lines;
             }
-            total_lines += 2;
+            total_lines += content_lines;
         }
     }
 
@@ -108,6 +131,22 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
             break;
         }
 
+        // Add gap line before each thread (except first) in modern theme
+        if use_modern && thread_idx > 0 {
+            if current_line + gap_lines > scroll_offset && current_line < scroll_end {
+                if first_added_line.is_none() {
+                    first_added_line = Some(current_line);
+                }
+                // Render gap line with thread_gap style
+                let gap_line = Line::from(Span::styled(
+                    " ".repeat(inner.width as usize),
+                    Theme::thread_gap(),
+                ));
+                items.push(ListItem::new(gap_line));
+            }
+            current_line += gap_lines;
+        }
+
         let is_current_thread = thread_idx == state.thread.selected;
         let is_expanded = state.is_thread_expanded(&thread.id);
 
@@ -118,22 +157,25 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
             let match_type = state.get_match_type(latest_email.uid);
 
             // Only render if visible
-            if current_line + 2 > scroll_offset {
+            if current_line + content_lines > scroll_offset {
                 if first_added_line.is_none() {
                     first_added_line = Some(current_line);
                 }
                 let header_items = render_thread_header(
                     thread,
                     &state.emails,
-                    is_header_selected,
-                    inner.width,
-                    true,
-                    &state.search.query,
-                    match_type,
+                    ThreadHeaderOptions {
+                        selected: is_header_selected,
+                        width: inner.width,
+                        expanded: true,
+                        search_query: &state.search.query,
+                        match_type,
+                        use_modern,
+                    },
                 );
                 items.extend(header_items);
             }
-            current_line += 2;
+            current_line += content_lines;
 
             // Render each email in thread
             let email_count = thread.email_indices.len();
@@ -141,7 +183,7 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
                 if current_line >= scroll_end {
                     break;
                 }
-                if current_line + 2 > scroll_offset {
+                if current_line + content_lines > scroll_offset {
                     if first_added_line.is_none() {
                         first_added_line = Some(current_line);
                     }
@@ -156,14 +198,15 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
                         &state.search.query,
                         email_match_type,
                         is_last,
+                        use_modern,
                     );
                     items.extend(email_items);
                 }
-                current_line += 2;
+                current_line += content_lines;
             }
         } else {
             // Collapsed thread - 2 lines
-            if current_line + 2 > scroll_offset {
+            if current_line + content_lines > scroll_offset {
                 if first_added_line.is_none() {
                     first_added_line = Some(current_line);
                 }
@@ -173,15 +216,18 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
                 let thread_items = render_thread_header(
                     thread,
                     &state.emails,
-                    is_selected,
-                    inner.width,
-                    false,
-                    &state.search.query,
-                    match_type,
+                    ThreadHeaderOptions {
+                        selected: is_selected,
+                        width: inner.width,
+                        expanded: false,
+                        search_query: &state.search.query,
+                        match_type,
+                        use_modern,
+                    },
                 );
                 items.extend(thread_items);
             }
-            current_line += 2;
+            current_line += content_lines;
         }
     }
 
@@ -205,14 +251,15 @@ pub fn render_thread_list(frame: &mut Frame, area: Rect, state: &AppState, show_
 pub fn render_thread_header(
     thread: &EmailThread,
     emails: &[EmailHeader],
-    selected: bool,
-    width: u16,
-    expanded: bool,
-    search_query: &str,
-    match_type: MatchType,
+    opts: ThreadHeaderOptions,
 ) -> Vec<ListItem<'static>> {
     let email = thread.latest(emails);
-    let width = width as usize;
+    let width = opts.width as usize;
+    let selected = opts.selected;
+    let expanded = opts.expanded;
+    let search_query = opts.search_query;
+    let match_type = opts.match_type;
+    let use_modern = opts.use_modern;
 
     // Line 1: ▶ Alice Smith                                    Dec 27
     // Show "→ [recipient]" for sent emails, otherwise show sender
@@ -288,6 +335,7 @@ pub fn render_thread_header(
     let line1 = Line::from(line1_spans);
 
     // Line 2: ●+★ Subject...                              [3]
+    // Modern theme: ●  +  ★  (spaced indicators)
     let unread_indicator = if thread.has_unread() {
         symbols::UNREAD
     } else {
@@ -301,6 +349,9 @@ pub fn render_thread_header(
     let has_starred = thread.emails(emails).any(|e| e.is_flagged());
     let star_indicator = if has_starred { symbols::STARRED } else { " " };
 
+    // Spacing between indicators in modern theme
+    let indicator_spacing = if use_modern { " " } else { "" };
+
     let badge = if thread.total_count > 1 {
         format!("[{}]", thread.total_count)
     } else {
@@ -308,8 +359,9 @@ pub fn render_thread_header(
     };
     let badge_width = badge.len();
 
-    // Indent: 2 (indicator) + 1 (unread) + 1 (attach) + 1 (star) + 1 (space) + 1 (padding)
-    let indent = 6;
+    // Indent: 2 (indicator) + 1 (unread) + spacing + 1 (attach) + spacing + 1 (star) + 1 (space) + 1 (padding)
+    let spacing_width = if use_modern { 2 } else { 0 }; // 2 spacings x 1 char each
+    let indent = 6 + spacing_width;
     let subject_width = width.saturating_sub(indent + badge_width + 1);
 
     let _subject_display = truncate_string(&email.subject, subject_width);
@@ -392,7 +444,9 @@ pub fn render_thread_header(
     let mut line2_spans = vec![
         Span::styled("  ", base_style), // indent to match indicator
         Span::styled(unread_indicator, unread_style),
+        Span::styled(indicator_spacing, base_style),
         Span::styled(attachment_indicator, attach_style),
+        Span::styled(indicator_spacing, base_style),
         Span::styled(star_indicator, star_style),
         Span::styled(" ", base_style),
     ];
@@ -420,6 +474,7 @@ pub fn render_thread_email(
     search_query: &str,
     match_type: MatchType,
     is_last: bool,
+    use_modern: bool,
 ) -> Vec<ListItem<'static>> {
     let width = width as usize;
 
@@ -495,6 +550,7 @@ pub fn render_thread_email(
     let line1 = Line::from(line1_spans);
 
     // Line 2: subject
+    // Modern theme: ●  +  ★  ↩  (spaced indicators)
     let unread_indicator = if !email.is_seen() {
         symbols::UNREAD
     } else {
@@ -510,7 +566,11 @@ pub fn render_thread_email(
     let is_replied = email.is_answered();
     let replied_indicator = if is_replied { symbols::REPLIED } else { " " };
 
-    let inner_indent = indent_width + 5; // indent + unread + attach + star + replied + space
+    // Spacing between indicators in modern theme
+    let indicator_spacing = if use_modern { " " } else { "" };
+    let spacing_width = if use_modern { 3 } else { 0 }; // 3 spacings x 1 char each
+
+    let inner_indent = indent_width + 5 + spacing_width; // indent + unread + attach + star + replied + space + spacings
     let subject_width = width.saturating_sub(inner_indent + 1); // +1 for padding before divider
 
     let _subject_display = truncate_string(&email.subject, subject_width);
@@ -609,8 +669,11 @@ pub fn render_thread_email(
     let mut line2_spans = vec![
         Span::styled(line2_prefix, with_selection_bg(Theme::border(), selected)),
         Span::styled(unread_indicator, unread_style),
+        Span::styled(indicator_spacing, base_style),
         Span::styled(attachment_indicator, attach_style),
+        Span::styled(indicator_spacing, base_style),
         Span::styled(star_indicator, star_style),
+        Span::styled(indicator_spacing, base_style),
         Span::styled(replied_indicator, replied_style),
         Span::styled(" ", base_style),
     ];

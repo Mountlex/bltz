@@ -24,7 +24,8 @@ pub fn render_email_headers(
 ) {
     let block = Block::default()
         .borders(Borders::BOTTOM)
-        .border_style(Theme::border());
+        .border_style(Theme::border())
+        .style(Theme::main_bg());
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -83,9 +84,11 @@ pub fn render_email_headers(
     }
 
     let paragraph = if wrap {
-        Paragraph::new(lines).wrap(Wrap { trim: false })
-    } else {
         Paragraph::new(lines)
+            .style(Theme::main_bg())
+            .wrap(Wrap { trim: false })
+    } else {
+        Paragraph::new(lines).style(Theme::main_bg())
     };
 
     frame.render_widget(paragraph, inner);

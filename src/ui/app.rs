@@ -4,6 +4,7 @@
 //! All state types live in `crate::app::state`.
 
 use ratatui::Frame;
+use ratatui::widgets::Block;
 
 use crate::app::state::{AppState, View};
 
@@ -12,8 +13,14 @@ use super::composer::render_composer;
 use super::contacts::render_contacts;
 use super::inbox::render_inbox;
 use super::reader::render_reader;
+use super::theme::Theme;
 
 pub fn render(frame: &mut Frame, state: &AppState) {
+    // Fill the entire frame with the main background color
+    // This ensures light themes have a proper light background
+    let bg_block = Block::default().style(Theme::main_bg());
+    frame.render_widget(bg_block, frame.area());
+
     match &state.view {
         View::Inbox => render_inbox(frame, state),
         View::Reader { uid } => render_reader(frame, state, *uid),

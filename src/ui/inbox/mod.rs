@@ -15,18 +15,18 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Modifier,
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
 use crate::app::state::{AppState, ModalState};
 use crate::constants::{
-    FOLDER_SIDEBAR_WIDTH, MIN_SIDEBAR_VIEW_WIDTH, MIN_SPLIT_VIEW_WIDTH, SPLIT_RATIO_MAX,
-    SPLIT_RATIO_MIN,
+    FOLDER_SIDEBAR_WIDTH, HELP_BAR_HEIGHT_MODERN, MIN_SIDEBAR_VIEW_WIDTH, MIN_SPLIT_VIEW_WIDTH,
+    SPLIT_RATIO_MAX, SPLIT_RATIO_MIN, STATUS_BAR_HEIGHT_MODERN,
 };
 
 use super::components::{render_email_headers, render_quoted_text};
 use super::status_bar::spinner_char;
-use super::theme::Theme;
+use super::theme::{self, Theme};
 use super::widgets::{StatusInfo, enhanced_status_bar, error_bar, help_bar, sanitize_text};
 
 use popups::{render_command_bar, render_confirm_modal, render_unified_help_popup};
@@ -36,26 +36,38 @@ pub fn render_inbox(frame: &mut Frame, state: &AppState) {
     let show_search_bar = state.modal.is_search() || !state.search.query.is_empty();
     let show_command_bar = state.modal.is_command() || state.modal.command_result().is_some();
 
+    // Use theme-aware bar heights
+    let status_height = if theme::use_modern_spacing() {
+        STATUS_BAR_HEIGHT_MODERN
+    } else {
+        1
+    };
+    let help_height = if theme::use_modern_spacing() {
+        HELP_BAR_HEIGHT_MODERN
+    } else {
+        1
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(if show_command_bar {
             vec![
-                Constraint::Length(1), // Status bar
-                Constraint::Min(0),    // Main content (split view)
-                Constraint::Length(1), // Command bar (replaces help bar when active)
+                Constraint::Length(status_height), // Status bar
+                Constraint::Min(0),                // Main content (split view)
+                Constraint::Length(help_height),   // Command bar (replaces help bar when active)
             ]
         } else if show_search_bar {
             vec![
-                Constraint::Length(1), // Status bar
-                Constraint::Length(1), // Search bar
-                Constraint::Min(0),    // Main content (split view)
-                Constraint::Length(1), // Help bar or error
+                Constraint::Length(status_height), // Status bar
+                Constraint::Length(1),             // Search bar
+                Constraint::Min(0),                // Main content (split view)
+                Constraint::Length(help_height),   // Help bar or error
             ]
         } else {
             vec![
-                Constraint::Length(1), // Status bar
-                Constraint::Min(0),    // Main content (split view)
-                Constraint::Length(1), // Help bar or error
+                Constraint::Length(status_height), // Status bar
+                Constraint::Min(0),                // Main content (split view)
+                Constraint::Length(help_height),   // Help bar or error
             ]
         })
         .split(frame.area());
@@ -267,19 +279,22 @@ fn render_preview(frame: &mut Frame, area: Rect, state: &AppState) {
         // Show helpful hints when no email is selected
         let hint_lines = vec![
             Line::from(Span::styled("No email selected", Theme::text_secondary())),
-            Line::from(""),
+            Line::from(Span::styled("", Theme::main_bg())),
             Line::from(Span::styled("j/k to navigate", Theme::text_muted())),
             Line::from(Span::styled("Enter to read", Theme::text_muted())),
             Line::from(Span::styled(". for help", Theme::text_muted())),
         ];
-        let paragraph = Paragraph::new(hint_lines).alignment(ratatui::layout::Alignment::Center);
+        let paragraph = Paragraph::new(hint_lines)
+            .style(Theme::main_bg())
+            .alignment(ratatui::layout::Alignment::Center);
         frame.render_widget(paragraph, inner);
     }
 }
 
 fn render_email_body(frame: &mut Frame, area: Rect, state: &AppState) {
-    // Clear the area first to prevent rendering artifacts when content changes
-    frame.render_widget(Clear, area);
+    // Clear the area with the main background color
+    let bg_block = Block::default().style(Theme::main_bg());
+    frame.render_widget(bg_block, area);
 
     // Get sanitized body text - uses cache when body is loaded, otherwise show loading/preview
     let sanitized = if state.reader.body.is_some() {
@@ -306,6 +321,7 @@ fn render_email_body(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let scroll = state.reader.scroll.min(u16::MAX as usize) as u16;
     let paragraph = Paragraph::new(text)
+        .style(Theme::main_bg())
         .wrap(Wrap { trim: false })
         .scroll((scroll, 0));
 

@@ -73,6 +73,10 @@ pub struct App {
     pub(crate) ai_actor: Option<AiActorHandle>,
     /// Dirty flag: when true, UI needs re-render. Skips renders when nothing changed.
     pub(crate) dirty: bool,
+    /// Last detected system dark mode state (for detecting theme changes)
+    pub(crate) last_system_dark_mode: bool,
+    /// Last time we checked the system theme
+    pub(crate) last_theme_check: Instant,
 }
 
 impl App {
@@ -178,6 +182,8 @@ impl App {
             last_search_input: None,
             ai_actor,
             dirty: true, // Start dirty for initial render
+            last_system_dark_mode: crate::ui::theme::detect_system_dark_mode(),
+            last_theme_check: Instant::now(),
         };
 
         // Initialize other accounts info for status bar

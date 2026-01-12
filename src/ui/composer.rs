@@ -230,7 +230,8 @@ fn render_autocomplete_dropdown(frame: &mut Frame, field_area: Rect, state: &App
         Block::default()
             .borders(Borders::ALL)
             .border_type(borders::popup())
-            .border_style(Theme::border_focused()),
+            .border_style(Theme::border_focused())
+            .style(Theme::main_bg()),
     );
 
     frame.render_widget(list, dropdown_area);
@@ -240,6 +241,7 @@ fn render_from_field(frame: &mut Frame, area: Rect, account_name: &str) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Theme::border())
+        .style(Theme::main_bg())
         .title(" From ");
 
     let inner = block.inner(area);
@@ -250,7 +252,7 @@ fn render_from_field(frame: &mut Frame, area: Rect, account_name: &str) {
         Span::styled("  (Ctrl+A to change)", Theme::text_muted()),
     ]);
 
-    let paragraph = Paragraph::new(line);
+    let paragraph = Paragraph::new(line).style(Theme::main_bg());
     frame.render_widget(paragraph, inner);
 }
 
@@ -271,6 +273,7 @@ fn render_field(frame: &mut Frame, area: Rect, label: &str, value: &str, focused
         .borders(Borders::ALL)
         .border_type(border_type)
         .border_style(border_style)
+        .style(Theme::main_bg())
         .title(format!(" {} ", label));
 
     let inner = block.inner(area);
@@ -312,6 +315,7 @@ fn render_body_field(frame: &mut Frame, area: Rect, body: &str, focused: bool) {
         .borders(Borders::ALL)
         .border_type(border_type)
         .border_style(border_style)
+        .style(Theme::main_bg())
         .title(title);
 
     let inner = block.inner(area);
@@ -362,6 +366,7 @@ fn render_polish_preview(frame: &mut Frame, preview: &PolishPreview) {
         .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
         .border_type(borders::popup())
         .border_style(Theme::border_focused())
+        .style(Theme::main_bg())
         .title(title);
     frame.render_widget(title_block, chunks[0]);
 
@@ -376,8 +381,10 @@ fn render_polish_preview(frame: &mut Frame, preview: &PolishPreview) {
     let original_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Theme::border())
+        .style(Theme::main_bg())
         .title(" Original ");
     let original_text = Paragraph::new(preview.original.as_str())
+        .style(Theme::main_bg())
         .wrap(Wrap { trim: false })
         .block(original_block);
     frame.render_widget(original_text, panes[0]);
@@ -386,6 +393,7 @@ fn render_polish_preview(frame: &mut Frame, preview: &PolishPreview) {
     let polished_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Theme::border_focused())
+        .style(Theme::main_bg())
         .title(" Polished ");
     let polished_content = if preview.loading {
         "Generating polished text..."
@@ -395,6 +403,7 @@ fn render_polish_preview(frame: &mut Frame, preview: &PolishPreview) {
         preview.polished.as_str()
     };
     let polished_text = Paragraph::new(polished_content)
+        .style(Theme::main_bg())
         .wrap(Wrap { trim: false })
         .block(polished_block);
     frame.render_widget(polished_text, panes[1]);
@@ -403,7 +412,8 @@ fn render_polish_preview(frame: &mut Frame, preview: &PolishPreview) {
     let help_block = Block::default()
         .borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT)
         .border_type(borders::popup())
-        .border_style(Theme::border_focused());
+        .border_style(Theme::border_focused())
+        .style(Theme::main_bg());
     frame.render_widget(help_block, chunks[2]);
 
     if !preview.loading {

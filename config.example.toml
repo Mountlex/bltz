@@ -75,6 +75,32 @@ show_preview = true
 [ui]
 # Keybinding mode: "vim" or "arrows"
 keybinding_mode = "vim"
+
+# Theme configuration
+# -------------------
+# Bltz automatically detects your system's dark/light mode and switches themes.
+# You can set different themes for dark and light modes:
+#
+#   dark_theme = "modern"           # Used when system is in dark mode
+#   light_theme = "solarized-light" # Used when system is in light mode
+#
+# Available themes:
+#   Basic:  "modern" (default), "dark", "high-contrast"
+#   Dark:   "solarized-dark", "tokyo-night", "rose-pine"
+#   Light:  "solarized-light", "tokyo-day", "rose-pine-dawn"
+#
+# RGB themes (solarized-*, tokyo-*, rose-pine*) require true color terminal
+# support (COLORTERM=truecolor). They fall back to basic themes if unsupported.
+#
+# To override system detection, set the BLTZ_COLOR_SCHEME environment variable:
+#   export BLTZ_COLOR_SCHEME=dark   # Force dark mode
+#   export BLTZ_COLOR_SCHEME=light  # Force light mode
+#
+# Or use the legacy single-theme mode (ignores system dark/light mode):
+#   theme = "modern"
+
+dark_theme = "modern"
+light_theme = "solarized-light"
 # Date format in email list (strftime format)
 date_format = "%b %d"
 # Preview text length in email list

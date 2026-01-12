@@ -73,7 +73,8 @@ pub fn render_confirm_modal(frame: &mut Frame, area: Rect, pending: &PendingComm
         .title_bottom(" y confirm │ n/Esc cancel ")
         .borders(Borders::ALL)
         .border_type(borders::popup())
-        .border_style(Style::default().fg(colors::fg_warning()));
+        .border_style(Style::default().fg(colors::fg_warning()))
+        .style(Theme::main_bg());
 
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
@@ -90,7 +91,9 @@ pub fn render_confirm_modal(frame: &mut Frame, area: Rect, pending: &PendingComm
         Line::from(""),
     ];
 
-    let paragraph = Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center);
+    let paragraph = Paragraph::new(lines)
+        .style(Theme::main_bg())
+        .alignment(ratatui::layout::Alignment::Center);
     frame.render_widget(paragraph, inner);
 }
 
@@ -128,7 +131,8 @@ pub fn render_unified_help_popup(
         .title_bottom(" j/k scroll │ . or Esc close ")
         .borders(Borders::ALL)
         .border_type(borders::popup())
-        .border_style(Theme::border_focused());
+        .border_style(Theme::border_focused())
+        .style(Theme::main_bg());
 
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);

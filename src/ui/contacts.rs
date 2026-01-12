@@ -65,7 +65,8 @@ fn render_contacts_list(frame: &mut Frame, area: Rect, state: &AppState) {
     let block = Block::default()
         .title(" Contacts ")
         .borders(Borders::ALL)
-        .border_style(Theme::border());
+        .border_style(Theme::border())
+        .style(Theme::main_bg());
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -199,7 +200,8 @@ fn render_contact_edit_popup(frame: &mut Frame, area: Rect, state: &AppState) {
         .title(" Edit Contact Name ")
         .borders(Borders::ALL)
         .border_type(borders::popup())
-        .border_style(Theme::border_focused());
+        .border_style(Theme::border_focused())
+        .style(Theme::main_bg());
 
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);

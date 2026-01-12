@@ -30,7 +30,7 @@ pub fn render_quoted_text(text: &str) -> Vec<Line<'_>> {
                 spans.push(Span::styled(content, Theme::text_muted()));
                 Line::from(spans)
             } else {
-                Line::raw(line)
+                Line::styled(line, Theme::text())
             }
         })
         .collect()

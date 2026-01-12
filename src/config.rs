@@ -135,8 +135,15 @@ pub struct SmtpConfig {
 pub struct UiConfig {
     #[serde(default)]
     pub keybinding_mode: KeybindingMode,
-    #[serde(default)]
-    pub theme: ThemeVariant,
+    /// Legacy single theme field - overrides dark_theme/light_theme if set
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<ThemeVariant>,
+    /// Theme to use when system is in dark mode
+    #[serde(default = "default_dark_theme")]
+    pub dark_theme: ThemeVariant,
+    /// Theme to use when system is in light mode
+    #[serde(default = "default_light_theme")]
+    pub light_theme: ThemeVariant,
     #[serde(default = "default_date_format")]
     pub date_format: String,
     #[serde(default = "default_preview_length")]
@@ -147,6 +154,14 @@ pub struct UiConfig {
     /// Show sent emails in inbox threads (conversation view)
     #[serde(default = "default_true")]
     pub conversation_mode: bool,
+}
+
+fn default_dark_theme() -> ThemeVariant {
+    ThemeVariant::Modern
+}
+
+fn default_light_theme() -> ThemeVariant {
+    ThemeVariant::SolarizedLight
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -165,6 +180,18 @@ pub enum ThemeVariant {
     Dark,
     #[serde(rename = "high-contrast")]
     HighContrast,
+    #[serde(rename = "solarized-dark")]
+    SolarizedDark,
+    #[serde(rename = "solarized-light")]
+    SolarizedLight,
+    #[serde(rename = "tokyo-night")]
+    TokyoNight,
+    #[serde(rename = "tokyo-day")]
+    TokyoDay,
+    #[serde(rename = "rose-pine")]
+    RosePine,
+    #[serde(rename = "rose-pine-dawn")]
+    RosePineDawn,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -285,7 +312,9 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             keybinding_mode: KeybindingMode::default(),
-            theme: ThemeVariant::default(),
+            theme: None,
+            dark_theme: default_dark_theme(),
+            light_theme: default_light_theme(),
             date_format: default_date_format(),
             preview_length: default_preview_length(),
             split_ratio: default_split_ratio(),

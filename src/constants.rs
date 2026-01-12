@@ -60,3 +60,17 @@ pub const SCROLL_TARGET_FRACTION: usize = 4;
 
 /// Spinner animation frame duration in milliseconds.
 pub const SPINNER_FRAME_MS: u128 = 80;
+
+// === Modern Theme Spacing Constants ===
+
+/// Status bar height in lines for modern theme (includes padding).
+pub const STATUS_BAR_HEIGHT_MODERN: u16 = 2;
+
+/// Help bar height in lines for modern theme (includes padding).
+pub const HELP_BAR_HEIGHT_MODERN: u16 = 2;
+
+/// Horizontal content padding in characters for modern theme.
+pub const CONTENT_PADDING_H: u16 = 2;
+
+/// Interval in seconds to check for system theme changes.
+pub const THEME_CHECK_INTERVAL_SECS: u64 = 2;

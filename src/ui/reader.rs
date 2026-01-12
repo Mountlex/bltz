@@ -7,11 +7,12 @@ use ratatui::{
 };
 
 use super::components::{render_email_headers, render_quoted_text};
-use super::theme::Theme;
+use super::theme::{self, Theme};
 use super::widgets::{
     StatusInfo, enhanced_status_bar, error_bar, help_bar, sanitize_text, spinner_char,
 };
 use crate::app::state::AppState;
+use crate::constants::{HELP_BAR_HEIGHT_MODERN, STATUS_BAR_HEIGHT_MODERN};
 use crate::mail::types::Attachment;
 
 pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
@@ -35,14 +36,26 @@ pub fn render_reader(frame: &mut Frame, state: &AppState, uid: u32) {
         0
     };
 
+    // Use theme-aware bar heights
+    let status_height = if theme::use_modern_spacing() {
+        STATUS_BAR_HEIGHT_MODERN
+    } else {
+        1
+    };
+    let help_height = if theme::use_modern_spacing() {
+        HELP_BAR_HEIGHT_MODERN
+    } else {
+        1
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),                 // Status bar
+            Constraint::Length(status_height),     // Status bar
             Constraint::Length(header_lines),      // Headers
             Constraint::Length(attachment_height), // Attachments (if any)
             Constraint::Min(0),                    // Body
-            Constraint::Length(1),                 // Help bar
+            Constraint::Length(help_height),       // Help bar
         ])
         .split(frame.area());
 
@@ -141,7 +154,8 @@ fn render_attachments(
             Theme::border_focused()
         } else {
             Theme::border()
-        });
+        })
+        .style(Theme::main_bg());
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -167,7 +181,9 @@ fn render_attachments(
 }
 
 fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState, uid: u32) {
-    let block = Block::default().borders(Borders::NONE);
+    let block = Block::default()
+        .borders(Borders::NONE)
+        .style(Theme::main_bg());
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -224,6 +240,7 @@ fn render_body(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState,
 
     let scroll = state.reader.scroll.min(u16::MAX as usize) as u16;
     let paragraph = Paragraph::new(text)
+        .style(Theme::main_bg())
         .wrap(Wrap { trim: false })
         .scroll((scroll, 0));
 

@@ -8,9 +8,9 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::theme::{Theme, symbols};
+use super::theme::{self, Theme, symbols};
 use crate::app::state::{AppState, OtherAccountInfo};
-use crate::constants::SPINNER_FRAME_MS;
+use crate::constants::{CONTENT_PADDING_H, SPINNER_FRAME_MS};
 
 /// Get current process memory usage (RSS) in bytes
 /// Returns None if unable to read memory info
@@ -190,7 +190,27 @@ fn truncate_to_width(s: &str, max_width: usize) -> String {
 /// Enhanced status bar with connection indicator and more info
 pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
     let style = Theme::status_bar();
-    let width = area.width as usize;
+    let use_modern = theme::use_modern_spacing();
+
+    // Fill entire area with background color
+    let bg_fill = ratatui::widgets::Block::default().style(style);
+    frame.render_widget(bg_fill, area);
+
+    // Calculate content area (centered vertically if multi-line, with horizontal padding)
+    let h_padding = if use_modern { CONTENT_PADDING_H } else { 0 };
+    let content_y = if use_modern && area.height >= 2 {
+        area.y + (area.height - 1) / 2 // Center the content line
+    } else {
+        area.y
+    };
+    let content_area = Rect {
+        x: area.x + h_padding,
+        y: content_y,
+        width: area.width.saturating_sub(h_padding * 2),
+        height: 1,
+    };
+
+    let width = content_area.width as usize;
 
     // Build left side content
     let conn_indicator = if info.loading {
@@ -256,10 +276,13 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
         .map(|(s, _)| display_width(s))
         .sum();
 
+    // Separator style: "•" with spacing in modern, "│" in classic
+    let sep = if use_modern { "  •  " } else { " │ " };
+
     // Build right side content
     let status_msg = if let Some(msg) = info.status_message {
         if !msg.is_empty() {
-            format!("{} │ ", msg)
+            format!("{}{}", msg, sep)
         } else {
             String::new()
         }
@@ -268,13 +291,13 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
     };
 
     let memory_info = if let Some(bytes) = get_memory_usage() {
-        format!("{} │ ", format_memory(bytes))
+        format!("{}{}", format_memory(bytes), sep)
     } else {
         String::new()
     };
 
     let sync_info = if let Some(ts) = info.last_sync {
-        format!("{} │ ", format_relative_time(ts))
+        format!("{}{}", format_relative_time(ts), sep)
     } else {
         String::new()
     };
@@ -355,7 +378,7 @@ pub fn enhanced_status_bar(frame: &mut Frame, area: Rect, info: &StatusInfo) {
 
     let line = Line::from(spans);
     let paragraph = Paragraph::new(line).style(style);
-    frame.render_widget(paragraph, area);
+    frame.render_widget(paragraph, content_area);
 }
 
 /// Build account indicator spans for the status bar
@@ -367,7 +390,13 @@ fn build_account_indicators(accounts: &[OtherAccountInfo]) -> Vec<(String, Style
     }
 
     let mut spans = Vec::new();
-    spans.push(("│".to_string(), Theme::status_muted()));
+    // Use modern separator in modern theme
+    let sep = if theme::use_modern_spacing() {
+        "•"
+    } else {
+        "│"
+    };
+    spans.push((sep.to_string(), Theme::status_muted()));
 
     for account in accounts.iter() {
         // Indicator symbol only (no account name)

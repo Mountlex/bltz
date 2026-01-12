@@ -126,6 +126,18 @@ impl ComposerField {
     }
 }
 
+/// Theme completion state for tab completion in command mode
+#[derive(Debug, Clone)]
+pub struct ThemeCompletion {
+    /// Matching theme names
+    pub matches: Vec<&'static str>,
+    /// Currently selected match index
+    pub selected: usize,
+    /// The prefix the user typed before Tab (for potential future use)
+    #[allow(dead_code)]
+    pub prefix: String,
+}
+
 /// Modal overlay state - only one can be active at a time
 #[derive(Debug, Clone, Default)]
 pub enum ModalState {
@@ -136,6 +148,7 @@ pub enum ModalState {
         input: String,
         result: Option<CommandResult>,
         pending: Option<PendingCommand>,
+        completion: Option<ThemeCompletion>,
     },
     Help {
         keybindings: Vec<KeybindingEntry>,

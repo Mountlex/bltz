@@ -29,11 +29,21 @@ pub enum ParsedCommand {
     Quit,
     TestCredentials,
     AddAccount,
+    Theme(String),
 }
 
 /// Parse a command string into a ParsedCommand
 pub fn parse_command(input: &str) -> Option<ParsedCommand> {
     let trimmed = input.trim();
+
+    // Handle commands with arguments
+    if let Some(theme_name) = trimmed.strip_prefix("theme ") {
+        let name = theme_name.trim();
+        if !name.is_empty() {
+            return Some(ParsedCommand::Theme(name.to_string()));
+        }
+    }
+
     match trimmed {
         "clear" => Some(ParsedCommand::Clear),
         "help" | "h" | "?" => Some(ParsedCommand::Help),
@@ -41,6 +51,7 @@ pub fn parse_command(input: &str) -> Option<ParsedCommand> {
         "q" | "quit" => Some(ParsedCommand::Quit),
         "testcreds" | "test-creds" => Some(ParsedCommand::TestCredentials),
         "addaccount" | "add-account" => Some(ParsedCommand::AddAccount),
+        "theme" | "themes" => Some(ParsedCommand::Theme(String::new())), // No arg = list themes
         _ => None,
     }
 }
@@ -67,6 +78,10 @@ pub fn available_commands() -> Vec<CommandHelp> {
         CommandHelp {
             name: "testcreds",
             description: "Test credential storage backend",
+        },
+        CommandHelp {
+            name: "theme <name>",
+            description: "Switch color scheme (modern, dark, light, solarized-dark/light, tokyo-night/day, rose-pine/dawn)",
         },
     ]
 }

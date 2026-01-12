@@ -16,9 +16,17 @@ impl App {
         }
 
         // Handle command input
-        if let ModalState::Command { input, pending, .. } = &mut self.state.modal {
+        if let ModalState::Command {
+            input,
+            pending,
+            completion,
+            ..
+        } = &mut self.state.modal
+        {
             if pending.is_none() {
                 input.push(c);
+                // Clear completion state when user types
+                *completion = None;
             }
             return;
         }
@@ -86,8 +94,13 @@ impl App {
         }
 
         // Handle command backspace
-        if let ModalState::Command { input, .. } = &mut self.state.modal {
+        if let ModalState::Command {
+            input, completion, ..
+        } = &mut self.state.modal
+        {
             input.pop();
+            // Clear completion state when user edits
+            *completion = None;
             return;
         }
 

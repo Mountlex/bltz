@@ -49,7 +49,8 @@ pub fn render_add_account(
         .title(title)
         .borders(Borders::ALL)
         .border_type(borders::popup())
-        .border_style(Theme::border_focused());
+        .border_style(Theme::border_focused())
+        .style(Theme::main_bg());
 
     let inner_area = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
@@ -65,7 +66,7 @@ pub fn render_add_account(
         AddAccountStep::Confirm => render_confirm(data),
     };
 
-    frame.render_widget(content, inner_area);
+    frame.render_widget(content.style(Theme::main_bg()), inner_area);
 }
 
 fn render_auth_method_choice(data: &AddAccountData) -> Paragraph<'static> {

@@ -20,8 +20,66 @@ use std::env;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::app::App;
-use crate::config::Config;
+use crate::config::{Config, ThemeVariant};
 use crate::credentials::CredentialStore;
+
+/// Resolve the final theme based on config and system dark mode
+fn resolve_theme(config: &Config) -> ThemeVariant {
+    // If explicit theme override is set, use it (legacy mode)
+    let base_theme = if let Some(theme) = config.ui.theme {
+        tracing::debug!("Using explicit theme override: {:?}", theme);
+        theme
+    } else {
+        // Use dark_theme or light_theme based on system detection
+        let is_dark = crate::ui::theme::detect_system_dark_mode();
+        let theme = if is_dark {
+            config.ui.dark_theme
+        } else {
+            config.ui.light_theme
+        };
+        tracing::debug!("System dark mode: {}, using theme: {:?}", is_dark, theme);
+        theme
+    };
+
+    // Apply true color fallbacks
+    let supports_true_color = crate::ui::theme::supports_true_color();
+
+    match base_theme {
+        // Dark RGB themes - fall back to Dark
+        ThemeVariant::Modern
+        | ThemeVariant::SolarizedDark
+        | ThemeVariant::TokyoNight
+        | ThemeVariant::RosePine => {
+            if !supports_true_color {
+                tracing::info!(
+                    "{:?} theme requires true color support (COLORTERM=truecolor). \
+                     Falling back to Dark theme.",
+                    base_theme
+                );
+                ThemeVariant::Dark
+            } else {
+                base_theme
+            }
+        }
+        // Light RGB themes - fall back to SolarizedLight (simplest RGB light)
+        ThemeVariant::SolarizedLight | ThemeVariant::TokyoDay | ThemeVariant::RosePineDawn => {
+            if !supports_true_color {
+                tracing::info!(
+                    "{:?} theme requires true color support (COLORTERM=truecolor). \
+                     Falling back to High Contrast theme.",
+                    base_theme
+                );
+                // Note: Light RGB themes without true color fall back to HighContrast
+                // since there's no basic light theme
+                ThemeVariant::HighContrast
+            } else {
+                base_theme
+            }
+        }
+        // Basic themes work without true color
+        other => other,
+    }
+}
 
 fn setup_logging() {
     use std::fs::OpenOptions;
@@ -330,19 +388,8 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // Initialize theme from config, with true color detection
-            let theme = if config.ui.theme == crate::config::ThemeVariant::Modern
-                && !crate::ui::theme::supports_true_color()
-            {
-                tracing::info!(
-                    "Modern theme requires true color support (COLORTERM=truecolor). \
-                     Falling back to Dark theme."
-                );
-                crate::config::ThemeVariant::Dark
-            } else {
-                tracing::debug!("Using theme: {:?}", config.ui.theme);
-                config.ui.theme
-            };
+            // Initialize theme from config, with system dark mode detection
+            let theme = resolve_theme(&config);
             crate::ui::theme::init_theme(theme);
 
             // Get the default account

@@ -200,6 +200,7 @@ fn handle_command_input(key: KeyEvent, state: &AppState) -> InputResult {
         KeyCode::Char(c) => InputResult::Char(c),
         KeyCode::Backspace => InputResult::Backspace,
         KeyCode::Enter => InputResult::Action(Action::ExecuteCommand),
+        KeyCode::Tab => InputResult::Action(Action::CommandTabComplete),
         KeyCode::Esc => InputResult::Action(Action::Back),
         _ => InputResult::Continue,
     }
