@@ -155,9 +155,21 @@ Logs are written to `~/.config/bltz/bltz.log`.
 | `m` | Toggle read / unread |
 | `s` | Toggle star |
 | `S` | View starred emails |
+| `C` | Toggle conversation view |
 | `Ctrl+r` | Refresh |
 | `u` | Undo |
 | `B` | Contacts |
+| `H` | Expand/collapse headers |
+
+### Attachments
+
+| Key | Action | Context |
+|-----|--------|---------|
+| `A` | Toggle attachment list | Reader |
+| `j` / `k` | Navigate attachments | Attachment list |
+| `Enter` | Open with system app | Attachment list |
+| `s` | Save to ~/Downloads | Attachment list |
+| `Esc` | Close attachment list | Attachment list |
 
 ### AI Features
 

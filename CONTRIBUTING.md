@@ -132,7 +132,7 @@ Releases are automated via GitHub Actions. To create a new release:
 3. Create and push a version tag:
    ```bash
    git tag vX.Y.Z
-   git push origin master
+   git push origin main
    git push origin vX.Y.Z
    ```
 

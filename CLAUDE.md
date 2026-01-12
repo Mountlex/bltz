@@ -94,6 +94,7 @@ User Input → Input Handler → Action Processing → IMAP Actor Commands
 | . | Help (keybindings + commands) |
 | u | Undo |
 | C | Toggle conversation view |
+| H | Expand/collapse headers |
 
 ### View Modes (Vim mode)
 
