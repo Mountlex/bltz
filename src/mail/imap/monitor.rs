@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use crate::cache::Cache;
 use crate::constants::{IDLE_TIMEOUT_SECS, MAX_RETRIES, MAX_RETRY_DELAY_SECS};
 
-use super::{ImapClient, ImapEvent, folder_cache_key};
+use super::{ImapClient, ImapError, ImapEvent, folder_cache_key};
 
 /// Event from a folder monitor, tagged with its source folder.
 #[derive(Debug, Clone)]
@@ -112,10 +112,7 @@ async fn folder_monitor_loop(
                 tracing::warn!("{}", msg);
 
                 if attempt == MAX_RETRIES {
-                    send_event(ImapEvent::Error(
-                        "Folder monitor: max retries exceeded".to_string(),
-                    ))
-                    .await;
+                    send_event(ImapEvent::Error(ImapError::MaxRetriesExceeded)).await;
                     return;
                 }
 
@@ -127,11 +124,8 @@ async fn folder_monitor_loop(
 
     // Select the folder
     if let Err(e) = client.select_folder(&folder).await {
-        send_event(ImapEvent::Error(format!(
-            "Failed to select folder '{}': {}",
-            folder, e
-        )))
-        .await;
+        tracing::warn!("Failed to select folder '{}': {}", folder, e);
+        send_event(ImapEvent::Error(ImapError::MailboxNotFound(folder.clone()))).await;
         return;
     }
 
@@ -255,9 +249,21 @@ async fn do_sync(
         .ok();
 
     // Sync folder using the client's sync method
+    tracing::info!(
+        "Folder monitor '{}': starting sync (cache_key='{}')",
+        folder,
+        cache_key
+    );
     match client.sync_current_folder(cache, account_id, folder).await {
         Ok(result) => {
             let total = cache.get_email_count(&cache_key).await.unwrap_or(0);
+            tracing::info!(
+                "Folder monitor '{}': sync complete, {} new emails, {} total in cache (full_sync={})",
+                folder,
+                result.new_emails.len(),
+                total,
+                result.full_sync
+            );
             event_tx
                 .send(FolderMonitorEvent {
                     folder: folder.to_string(),
@@ -275,7 +281,7 @@ async fn do_sync(
             event_tx
                 .send(FolderMonitorEvent {
                     folder: folder.to_string(),
-                    event: ImapEvent::Error(format!("Sync failed: {}", e)),
+                    event: ImapEvent::Error(ImapError::SyncFailed(e.to_string())),
                 })
                 .await
                 .ok();

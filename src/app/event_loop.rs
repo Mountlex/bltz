@@ -192,9 +192,9 @@ impl App {
                         }
                     }
                 }
-                ImapEvent::BodyFetched { uid, body } => {
+                ImapEvent::BodyFetched { uid, folder, body } => {
                     if is_active {
-                        self.handle_imap_body_fetched(uid, body);
+                        self.handle_imap_body_fetched(uid, &folder, body);
                     }
                 }
                 ImapEvent::BodyFetchFailed { uid, error } => {
@@ -216,6 +216,15 @@ impl App {
                     // Always store in the originating account (not just active)
                     if let Some(handle) = self.accounts.get_mut(account_event.account_index) {
                         handle.folder_list = folders.clone();
+                    }
+                    // Spawn sent folder monitor for this account (regardless of active status)
+                    // This is needed for conversation mode to work on all accounts
+                    if self.state.conversation_mode {
+                        self.spawn_sent_folder_monitor_for_account(
+                            account_event.account_index,
+                            &folders,
+                        )
+                        .await;
                     }
                     // Only process UI updates if active
                     if is_active {
@@ -267,7 +276,9 @@ impl App {
     }
 
     /// Handle events from folder monitors (e.g., Sent folder).
-    /// These are handled separately to avoid affecting main UI state.
+    ///
+    /// For startup sequence, we track when the Sent folder completes its initial sync
+    /// so we know when to display the conversation view.
     async fn handle_folder_monitor_event(
         &mut self,
         is_active: bool,
@@ -277,9 +288,28 @@ impl App {
         let is_sent = folder.to_lowercase().contains("sent");
 
         match event {
-            ImapEvent::SyncComplete { .. } => {
-                // Reload for Sent folder in conversation mode to update threads
-                if is_sent
+            ImapEvent::SyncComplete { new_count, .. } => {
+                tracing::debug!(
+                    "Folder monitor '{}' sync complete: {} new emails",
+                    folder,
+                    new_count
+                );
+
+                // Track startup state for Sent folder
+                if is_sent && is_active && !self.startup.sent_folder_synced {
+                    self.startup.sent_folder_synced = true;
+                    tracing::debug!("Startup: Sent folder synced");
+
+                    // Try initial load now that Sent folder is synced
+                    if self.try_initial_load().await {
+                        tracing::debug!("Startup: initial load complete (after Sent folder sync)");
+                        return;
+                    }
+                }
+
+                // After startup: reload for Sent folder in conversation mode to update threads
+                if self.startup.initial_load_done
+                    && is_sent
                     && is_active
                     && self.state.conversation_mode
                     && self.state.folder.current == "INBOX"
@@ -290,6 +320,13 @@ impl App {
             }
             ImapEvent::Error(e) => {
                 tracing::warn!("Folder monitor '{}' error: {}", folder, e);
+
+                // If Sent folder monitor fails during startup, don't block forever
+                if is_sent && is_active && !self.startup.sent_folder_synced {
+                    tracing::warn!("Sent folder monitor failed, proceeding without sent emails");
+                    self.startup.sent_folder_synced = true;
+                    self.try_initial_load().await;
+                }
             }
             _ => {
                 tracing::debug!("Folder monitor '{}' event: {:?}", folder, event);
@@ -389,22 +426,52 @@ impl App {
             .get_emails_before_cursor(&cache_key, None, EMAIL_PAGE_SIZE)
             .await
         {
+            let inbox_count = emails.len();
+            tracing::debug!(
+                "reload_from_cache: loaded {} inbox emails from '{}'",
+                inbox_count,
+                cache_key
+            );
+
             // If conversation mode is enabled and we're in INBOX, merge sent emails
+            // Use the active account's folder list (not state.folder.list which may be stale after account switch)
+            let account_folder_list = self.accounts.active().folder_list.clone();
             if self.state.conversation_mode
                 && self.state.folder.current == "INBOX"
-                && let Some(sent_folder) = self.find_sent_folder()
+                && let Some(sent_folder) = Self::find_sent_folder_in_list(&account_folder_list)
             {
                 let sent_cache_key = folder_cache_key(self.account_id(), &sent_folder);
+                tracing::debug!(
+                    "reload_from_cache: conversation mode enabled, looking for sent emails in '{}'",
+                    sent_cache_key
+                );
                 if let Ok(sent_emails) = self
                     .cache
                     .get_emails_before_cursor(&sent_cache_key, None, EMAIL_PAGE_SIZE)
                     .await
                 {
+                    tracing::info!(
+                        "reload_from_cache: merging {} sent emails (folders: {:?})",
+                        sent_emails.len(),
+                        sent_emails
+                            .iter()
+                            .map(|e| e.folder.as_deref())
+                            .take(3)
+                            .collect::<Vec<_>>()
+                    );
                     // Merge sent emails (they have folder field set so can be distinguished)
                     emails.extend(sent_emails);
                     // Sort by date descending for consistent ordering
                     emails.sort_by(|a, b| b.date.cmp(&a.date));
                 }
+            } else {
+                tracing::debug!(
+                    "reload_from_cache: skipping sent merge (conversation_mode={}, folder={}, sent_folder={:?}, account_folders={})",
+                    self.state.conversation_mode,
+                    self.state.folder.current,
+                    Self::find_sent_folder_in_list(&account_folder_list),
+                    account_folder_list.len()
+                );
             }
 
             self.state.pagination.emails_loaded = emails.len();
@@ -456,6 +523,12 @@ impl App {
         // Common sent folder patterns
         const SENT_PATTERNS: &[&str] = &["sent", "sent mail", "sent items", "[gmail]/sent"];
 
+        tracing::debug!(
+            "find_sent_folder: searching {} folders: {:?}",
+            self.state.folder.list.len(),
+            self.state.folder.list.iter().take(10).collect::<Vec<_>>()
+        );
+
         for folder in &self.state.folder.list {
             let lower = folder.to_lowercase();
             for pattern in SENT_PATTERNS {
@@ -465,6 +538,64 @@ impl App {
             }
         }
         None
+    }
+
+    /// Find the Sent folder from a given folder list
+    fn find_sent_folder_in_list(folders: &[String]) -> Option<String> {
+        const SENT_PATTERNS: &[&str] = &["sent", "sent mail", "sent items", "[gmail]/sent"];
+
+        for folder in folders {
+            let lower = folder.to_lowercase();
+            for pattern in SENT_PATTERNS {
+                if lower.contains(pattern) {
+                    return Some(folder.clone());
+                }
+            }
+        }
+        None
+    }
+
+    /// Spawn a sent folder monitor for a specific account (used for non-active accounts)
+    async fn spawn_sent_folder_monitor_for_account(
+        &mut self,
+        account_index: usize,
+        folders: &[String],
+    ) {
+        if let Some(sent_folder) = Self::find_sent_folder_in_list(folders) {
+            match self
+                .accounts
+                .spawn_folder_monitor(account_index, &sent_folder)
+                .await
+            {
+                Ok(true) => {
+                    tracing::info!(
+                        "Spawned Sent folder monitor for account {} folder '{}'",
+                        account_index,
+                        sent_folder
+                    );
+                }
+                Ok(false) => {
+                    // Already monitoring
+                    tracing::debug!(
+                        "Sent folder monitor already exists for account {}",
+                        account_index
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to spawn Sent folder monitor for account {}: {}",
+                        account_index,
+                        e
+                    );
+                }
+            }
+        } else {
+            tracing::debug!(
+                "No Sent folder found for account {} in {:?}",
+                account_index,
+                folders.iter().take(5).collect::<Vec<_>>()
+            );
+        }
     }
 
     /// Load more emails from cache (keyset pagination - O(1) instead of O(offset))

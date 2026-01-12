@@ -202,6 +202,21 @@ impl ImapClient {
         Ok(uids)
     }
 
+    /// Fetch headers for specific UIDs (used by parallel sync).
+    pub(crate) async fn fetch_headers_by_uids(&mut self, uids: &[u32]) -> Result<Vec<EmailHeader>> {
+        if uids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let uid_set = uids
+            .iter()
+            .map(|u| u.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        self.fetch_headers(&uid_set).await
+    }
+
     async fn fetch_headers(&mut self, sequence: &str) -> Result<Vec<EmailHeader>> {
         let session = self.session()?;
 

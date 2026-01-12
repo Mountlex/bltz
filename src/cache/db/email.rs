@@ -39,11 +39,11 @@ pub async fn insert_email(pool: &SqlitePool, account_id: &str, header: &EmailHea
     } else {
         Some(header.references.join(" "))
     };
-    // Extract folder from account_id (format: "account/folder") or use header.folder
+    // Extract folder from account_id (format: "email@example.com/folder") or use header.folder
     let folder = header
         .folder
         .clone()
-        .or_else(|| account_id.split('/').nth(1).map(String::from));
+        .or_else(|| account_id.split_once('/').map(|(_, f)| f.to_string()));
     sqlx::query(
         r#"
         INSERT OR REPLACE INTO emails
@@ -81,8 +81,18 @@ pub async fn insert_emails(
     // Use a transaction for batch insert
     let mut tx = pool.begin().await?;
 
-    // Extract folder from account_id (format: "account/folder")
-    let default_folder: Option<String> = account_id.split('/').nth(1).map(String::from);
+    // Extract folder from account_id (format: "email@example.com/folder")
+    // Use split_once to handle folder names that may contain '/'
+    let default_folder: Option<String> = account_id
+        .split_once('/')
+        .map(|(_, folder)| folder.to_string());
+
+    tracing::debug!(
+        "insert_emails: inserting {} emails with account_id='{}', default_folder={:?}",
+        headers.len(),
+        account_id,
+        default_folder
+    );
 
     for header in headers {
         let references_str = if header.references.is_empty() {

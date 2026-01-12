@@ -20,7 +20,7 @@ pub fn highlight_matches(
 
     let ac = {
         let cache = HIGHLIGHT_CACHE.get_or_init(|| Mutex::new(None));
-        let mut guard = cache.lock().unwrap();
+        let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((cached_query, cached_ac)) = guard.as_ref()
             && cached_query == query
         {

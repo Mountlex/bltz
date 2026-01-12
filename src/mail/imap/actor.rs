@@ -13,7 +13,9 @@ use crate::constants::{
 use crate::mail::parser::{extract_attachment_data, parse_attachments};
 use crate::mail::types::EmailFlags;
 
-use super::{ImapActorHandle, ImapClient, ImapCommand, ImapEvent, SyncResult, folder_cache_key};
+use super::{
+    ImapActorHandle, ImapClient, ImapCommand, ImapError, ImapEvent, SyncResult, folder_cache_key,
+};
 
 /// Spawn the IMAP actor and return a handle to control it.
 /// The actor maintains a single connection and uses IDLE for push notifications.
@@ -69,15 +71,16 @@ async fn imap_actor(
                     attempt, MAX_RETRIES, e
                 );
                 tracing::warn!("{}", msg);
-                if let Err(e) = event_tx.send(ImapEvent::Error(msg)).await {
+                if let Err(e) = event_tx
+                    .send(ImapEvent::Error(ImapError::from_anyhow(&e)))
+                    .await
+                {
                     tracing::debug!("Failed to send Error event: {}", e);
                 }
 
                 if attempt == MAX_RETRIES {
                     if let Err(e) = event_tx
-                        .send(ImapEvent::Error(
-                            "Max retries exceeded, giving up".to_string(),
-                        ))
+                        .send(ImapEvent::Error(ImapError::MaxRetriesExceeded))
                         .await
                     {
                         tracing::debug!("Failed to send max retries error: {}", e);
@@ -105,7 +108,9 @@ async fn imap_actor(
 
             if consecutive_errors > 5 {
                 if let Err(e) = event_tx
-                    .send(ImapEvent::Error("Too many consecutive errors".to_string()))
+                    .send(ImapEvent::Error(ImapError::Other(
+                        "Too many consecutive errors".to_string(),
+                    )))
                     .await
                 {
                     tracing::debug!("Failed to send consecutive errors event: {}", e);
@@ -117,7 +122,7 @@ async fn imap_actor(
             // Try to reconnect
             if let Err(e) = reconnect(&mut client).await {
                 if let Err(send_err) = event_tx
-                    .send(ImapEvent::Error(format!("Reconnect failed: {}", e)))
+                    .send(ImapEvent::Error(ImapError::from_anyhow(&e)))
                     .await
                 {
                     tracing::debug!("Failed to send reconnect error event: {}", send_err);
@@ -137,7 +142,7 @@ async fn imap_actor(
                 tracing::warn!("No session available for IDLE");
                 if let Err(e) = reconnect(&mut client).await
                     && let Err(send_err) = event_tx
-                        .send(ImapEvent::Error(format!("Reconnect failed: {}", e)))
+                        .send(ImapEvent::Error(ImapError::from_anyhow(&e)))
                         .await
                 {
                     tracing::debug!("Failed to send reconnect error event: {}", send_err);
@@ -156,7 +161,7 @@ async fn imap_actor(
             // Reconnect since IDLE failed
             if let Err(e) = reconnect(&mut client).await
                 && let Err(send_err) = event_tx
-                    .send(ImapEvent::Error(format!("Reconnect failed: {}", e)))
+                    .send(ImapEvent::Error(ImapError::from_anyhow(&e)))
                     .await
             {
                 tracing::debug!("Failed to send reconnect error event: {}", send_err);
@@ -184,7 +189,7 @@ async fn imap_actor(
                     Err(e) => {
                         tracing::error!("Failed to end IDLE: {:?}", e);
                         if let Err(e) = reconnect(&mut client).await {
-                            event_tx.send(ImapEvent::Error(format!("Reconnect failed: {}", e))).await.ok();
+                            event_tx.send(ImapEvent::Error(ImapError::from_anyhow(&e))).await.ok();
                         }
                         continue;
                     }
@@ -204,7 +209,7 @@ async fn imap_actor(
                         tracing::warn!("IDLE error: {:?}", e);
                         // Try to reconnect
                         if let Err(e) = reconnect(&mut client).await
-                            && let Err(send_err) = event_tx.send(ImapEvent::Error(format!("Reconnect failed: {}", e))).await
+                            && let Err(send_err) = event_tx.send(ImapEvent::Error(ImapError::from_anyhow(&e))).await
                         {
                             tracing::debug!("Failed to send reconnect error event: {}", send_err);
                         }
@@ -227,7 +232,7 @@ async fn imap_actor(
                     Err(e) => {
                         tracing::error!("Failed to end IDLE after command: {:?}", e);
                         if let Err(e) = reconnect(&mut client).await
-                            && let Err(send_err) = event_tx.send(ImapEvent::Error(format!("Reconnect failed: {}", e))).await
+                            && let Err(send_err) = event_tx.send(ImapEvent::Error(ImapError::from_anyhow(&e))).await
                         {
                             tracing::debug!("Failed to send reconnect error event: {}", send_err);
                         }
@@ -276,7 +281,11 @@ async fn handle_command(
             // Check cache first
             if let Ok(Some(body)) = cache.get_email_body(&body_cache_key, uid).await {
                 event_tx
-                    .send(ImapEvent::BodyFetched { uid, body })
+                    .send(ImapEvent::BodyFetched {
+                        uid,
+                        folder: folder.clone(),
+                        body,
+                    })
                     .await
                     .ok();
                 return;
@@ -306,7 +315,14 @@ async fn handle_command(
                     if let Err(e) = cache.insert_email_body(&body_cache_key, uid, &body).await {
                         tracing::warn!("Failed to cache email body for UID {}: {}", uid, e);
                     }
-                    if let Err(e) = event_tx.send(ImapEvent::BodyFetched { uid, body }).await {
+                    if let Err(e) = event_tx
+                        .send(ImapEvent::BodyFetched {
+                            uid,
+                            folder: folder.clone(),
+                            body,
+                        })
+                        .await
+                    {
                         tracing::debug!("Failed to send BodyFetched event: {}", e);
                     }
                 }
@@ -349,7 +365,11 @@ async fn handle_command(
             for uid in &cached_uids {
                 if let Ok(Some(body)) = cache.get_email_body(&body_cache_key, *uid).await {
                     event_tx
-                        .send(ImapEvent::BodyFetched { uid: *uid, body })
+                        .send(ImapEvent::BodyFetched {
+                            uid: *uid,
+                            folder: folder.clone(),
+                            body,
+                        })
                         .await
                         .ok();
                 }
@@ -392,8 +412,13 @@ async fn handle_command(
                             {
                                 tracing::warn!("Failed to cache email body for UID {}: {}", uid, e);
                             }
-                            if let Err(e) =
-                                event_tx.send(ImapEvent::BodyFetched { uid, body }).await
+                            if let Err(e) = event_tx
+                                .send(ImapEvent::BodyFetched {
+                                    uid,
+                                    folder: folder.clone(),
+                                    body,
+                                })
+                                .await
                             {
                                 tracing::debug!("Failed to send BodyFetched event: {}", e);
                             }
@@ -436,10 +461,7 @@ async fn handle_command(
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
                 tracing::error!("Failed to select folder '{}' for flag: {}", folder, e);
                 event_tx
-                    .send(ImapEvent::Error(format!(
-                        "Failed to select folder '{}': {}",
-                        folder, e
-                    )))
+                    .send(ImapEvent::Error(ImapError::MailboxNotFound(folder)))
                     .await
                     .ok();
                 // Don't attempt flag operation on wrong folder
@@ -473,7 +495,7 @@ async fn handle_command(
                 }
                 Err(e) => {
                     if let Err(send_err) = event_tx
-                        .send(ImapEvent::Error(format!("Failed to set flag: {}", e)))
+                        .send(ImapEvent::Error(ImapError::from_anyhow(&e)))
                         .await
                     {
                         tracing::error!("Failed to send error event: {}", send_err);
@@ -503,10 +525,7 @@ async fn handle_command(
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
                 tracing::error!("Failed to select folder '{}' for flag: {}", folder, e);
                 event_tx
-                    .send(ImapEvent::Error(format!(
-                        "Failed to select folder '{}': {}",
-                        folder, e
-                    )))
+                    .send(ImapEvent::Error(ImapError::MailboxNotFound(folder)))
                     .await
                     .ok();
                 // Don't attempt flag operation on wrong folder
@@ -540,7 +559,7 @@ async fn handle_command(
                 }
                 Err(e) => {
                     if let Err(send_err) = event_tx
-                        .send(ImapEvent::Error(format!("Failed to remove flag: {}", e)))
+                        .send(ImapEvent::Error(ImapError::from_anyhow(&e)))
                         .await
                     {
                         tracing::error!("Failed to send error event: {}", send_err);
@@ -570,10 +589,7 @@ async fn handle_command(
             if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
                 tracing::error!("Failed to select folder '{}' for delete: {}", folder, e);
                 event_tx
-                    .send(ImapEvent::Error(format!(
-                        "Failed to select folder '{}': {}",
-                        folder, e
-                    )))
+                    .send(ImapEvent::Error(ImapError::MailboxNotFound(folder)))
                     .await
                     .ok();
                 // Don't attempt delete on wrong folder
@@ -591,7 +607,7 @@ async fn handle_command(
                 }
                 Err(e) => {
                     if let Err(send_err) = event_tx
-                        .send(ImapEvent::Error(format!("Failed to delete: {}", e)))
+                        .send(ImapEvent::Error(ImapError::from_anyhow(&e)))
                         .await
                     {
                         tracing::error!("Failed to send error event: {}", send_err);
@@ -621,9 +637,10 @@ async fn handle_command(
                 }
                 Err(e) => {
                     event_tx
-                        .send(ImapEvent::Error(format!("Failed to select folder: {}", e)))
+                        .send(ImapEvent::Error(ImapError::MailboxNotFound(folder)))
                         .await
                         .ok();
+                    tracing::warn!("Failed to select folder: {}", e);
                 }
             }
         }
@@ -633,7 +650,7 @@ async fn handle_command(
             }
             Err(e) => {
                 event_tx
-                    .send(ImapEvent::Error(format!("Failed to list folders: {}", e)))
+                    .send(ImapEvent::Error(ImapError::from_anyhow(&e)))
                     .await
                     .ok();
             }
@@ -836,7 +853,7 @@ async fn do_sync_folder(
         Err(e) => {
             tracing::error!("Sync failed for '{}': {}", folder, e);
             event_tx
-                .send(ImapEvent::Error(format!("Sync failed: {}", e)))
+                .send(ImapEvent::Error(ImapError::SyncFailed(e.to_string())))
                 .await
                 .ok();
         }
@@ -880,10 +897,7 @@ async fn restore_folder_after_operation(
             // Critical: IDLE would monitor wrong folder. Force reconnect to recover.
             if let Err(reconnect_err) = reconnect(client).await {
                 event_tx
-                    .send(ImapEvent::Error(format!(
-                        "Folder desync recovery failed: {}",
-                        reconnect_err
-                    )))
+                    .send(ImapEvent::Error(ImapError::from_anyhow(&reconnect_err)))
                     .await
                     .ok();
                 return false;
@@ -906,9 +920,8 @@ async fn restore_folder_after_operation(
                     if client.select_folder("INBOX").await.is_ok() {
                         *current_folder = "INBOX".to_string();
                         event_tx
-                            .send(ImapEvent::Error(format!(
-                                "Folder '{}' unavailable, switched to INBOX",
-                                original_folder
+                            .send(ImapEvent::Error(ImapError::MailboxNotFound(
+                                original_folder.to_string(),
                             )))
                             .await
                             .ok();
@@ -985,8 +998,13 @@ impl ImapClient {
                 "Performing full sync for folder '{}' (UID validity changed or first sync)",
                 folder
             );
-            // Fetch all headers from server
-            let emails = self.fetch_all_headers().await?;
+            // Fetch all headers from server using parallel sync for speed
+            let emails = super::parallel_sync::parallel_fetch_all_headers(
+                self,
+                folder,
+                super::parallel_sync::DEFAULT_SYNC_CONCURRENCY,
+            )
+            .await?;
             tracing::info!("Fetched {} emails from folder '{}'", emails.len(), folder);
 
             // Insert/update emails first (uses INSERT OR REPLACE, safe if crash occurs here)

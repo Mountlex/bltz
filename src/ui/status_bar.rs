@@ -452,7 +452,7 @@ pub fn spinner_char() -> char {
     let spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
     let idx = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or(std::time::Duration::ZERO)
         .as_millis()
         / SPINNER_FRAME_MS) as usize
         % spinner.chars().count();

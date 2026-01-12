@@ -29,6 +29,50 @@ use state::{
 
 use self::undo::{PendingDeletion, UndoEntry};
 
+/// Tracks startup sequence for conversation mode
+///
+/// The startup sequence in conversation mode requires:
+/// 1. INBOX sync complete (inbox_synced)
+/// 2. Folder list received (folder_list_received)
+/// 3. Sent folder monitor spawned and synced (sent_folder_synced)
+///
+/// Only after all requirements are met do we call reload_from_cache()
+/// to display the merged conversation view.
+#[derive(Debug, Default)]
+pub struct StartupState {
+    /// INBOX has completed its initial sync
+    pub inbox_synced: bool,
+    /// Folder list has been received from server
+    pub folder_list_received: bool,
+    /// Sent folder monitor has completed its initial sync
+    /// (only relevant in conversation mode)
+    pub sent_folder_synced: bool,
+    /// Initial cache load has been performed
+    pub initial_load_done: bool,
+}
+
+impl StartupState {
+    /// Check if we're ready to perform the initial cache load
+    ///
+    /// Requirements:
+    /// - INBOX must be synced (we need inbox emails)
+    /// - Folder list must be received (we need to know folder names)
+    /// - In conversation mode: sent folder must also be synced
+    pub fn is_ready(&self, conversation_mode: bool) -> bool {
+        if self.initial_load_done {
+            return false; // Already done
+        }
+        self.inbox_synced
+            && self.folder_list_received
+            && (!conversation_mode || self.sent_folder_synced)
+    }
+
+    /// Reset state (used when switching accounts)
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
 /// State for email body prefetching and debouncing
 #[derive(Debug, Default)]
 pub struct PrefetchState {
@@ -61,6 +105,8 @@ pub struct App {
     pub(crate) accounts: AccountManager,
     pub(crate) state: AppState,
     pub(crate) bindings: KeyBindings,
+    /// Startup sequence tracking (for conversation mode sync)
+    pub(crate) startup: StartupState,
     /// Email body prefetching state
     pub(crate) prefetch: PrefetchState,
     /// Stack of undoable actions (most recent first)
@@ -176,6 +222,7 @@ impl App {
             accounts,
             state,
             bindings,
+            startup: StartupState::default(),
             prefetch: PrefetchState::default(),
             undo_stack: Vec::new(),
             pending_deletions: Vec::new(),
@@ -292,6 +339,10 @@ impl App {
     async fn on_account_switched(&mut self) {
         use crate::app::state::View;
 
+        // Reset startup state for the new account
+        // The new account may need to sync its Sent folder for conversation mode
+        self.startup.reset();
+
         // Update state for the new account
         let account = self.accounts.active();
         self.state.connection.account_name = account.display_name().to_string();
@@ -301,11 +352,19 @@ impl App {
         // Sync folder list from account handle to state
         if !account.folder_list.is_empty() {
             self.state.folder.list = account.folder_list.clone();
+            // Folder list already received for this account
+            self.startup.folder_list_received = true;
         } else {
             self.state.folder.list.clear();
         }
         // Reset folder selection state
         self.state.folder.selected = 0;
+
+        // Mark inbox as synced if we have cached emails (account was previously synced)
+        // and mark startup as done since we're switching to an already-synced account
+        self.startup.inbox_synced = true;
+        self.startup.sent_folder_synced = true; // Assume synced for account switch
+        self.startup.initial_load_done = true;
 
         // Reload from cache FIRST to avoid visual flash
         // This loads new emails before we clear the selection state

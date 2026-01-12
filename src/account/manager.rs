@@ -267,8 +267,8 @@ impl AccountManager {
                         // Unread count will be updated by the app after cache query
                         handle.last_sync = Some(std::time::Instant::now());
                     }
-                    ImapEvent::Error(msg) => {
-                        handle.on_error(msg.clone());
+                    ImapEvent::Error(err) => {
+                        handle.on_error(err.to_string());
                     }
                     _ => {}
                 }

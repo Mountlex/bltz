@@ -461,7 +461,9 @@ impl Config {
 
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
-        let dir = path.parent().unwrap();
+        let dir = path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Config path has no parent directory"))?;
 
         fs::create_dir_all(dir)
             .with_context(|| format!("Failed to create config directory: {}", dir.display()))?;
