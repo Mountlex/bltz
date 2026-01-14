@@ -20,12 +20,16 @@ impl App {
             return;
         }
 
-        // Only works in reader view
+        // Works in reader view and inbox view (with preview)
         let uid = match self.state.view {
             View::Reader { uid } => uid,
+            View::Inbox => match self.state.current_email_from_thread() {
+                Some(email) => email.uid,
+                None => return,
+            },
             _ => {
                 self.state
-                    .set_error("Summary toggle only works in reader view");
+                    .set_error("Summary toggle only works in reader/inbox view");
                 return;
             }
         };

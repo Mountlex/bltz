@@ -291,13 +291,44 @@ fn render_preview(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 }
 
+/// Get thread summary if available, otherwise show prompt to generate
+fn get_summary_or_prompt(state: &AppState) -> String {
+    // Check for cached thread summary
+    if let Some((ref thread_id, ref summary)) = state.reader.cached_thread_summary
+        && state
+            .current_thread()
+            .map(|t| &t.id == thread_id)
+            .unwrap_or(false)
+    {
+        return format!("[AI Thread Summary]\n\n{}", summary);
+    }
+    "[Press T to generate summary]".to_string()
+}
+
 fn render_email_body(frame: &mut Frame, area: Rect, state: &AppState) {
     // Clear the area with the main background color
     let bg_block = Block::default().style(Theme::main_bg());
     frame.render_widget(bg_block, area);
 
-    // Get sanitized body text - uses cache when body is loaded, otherwise show loading/preview
-    let sanitized = if state.reader.body.is_some() {
+    // Get current email UID for summary cache matching
+    let current_uid = state.current_email_from_thread().map(|e| e.uid);
+
+    // Get sanitized body text - handles AI summary, body, loading, and preview states
+    let sanitized = if state.reader.summary_loading {
+        // AI summary is being generated
+        format!("{} Generating AI summary...", spinner_char())
+    } else if state.reader.show_summary {
+        // Show AI summary if available for current email
+        if let Some((cached_uid, ref summary)) = state.reader.cached_summary {
+            if Some(cached_uid) == current_uid {
+                format!("[AI Summary]\n\n{}", summary)
+            } else {
+                get_summary_or_prompt(state)
+            }
+        } else {
+            get_summary_or_prompt(state)
+        }
+    } else if state.reader.body.is_some() {
         // Use cached sanitized body (computed once per body change)
         state.reader.sanitized_body(sanitize_text)
     } else if state.status.loading {
