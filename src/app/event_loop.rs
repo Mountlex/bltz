@@ -24,6 +24,11 @@ impl App {
                 self.dirty = true;
             }
 
+            // Process body fetch results from background tasks (non-blocking)
+            if self.process_body_fetch_results().await {
+                self.dirty = true;
+            }
+
             // Process AI events from the actor (non-blocking)
             if self.process_ai_events() {
                 self.dirty = true;

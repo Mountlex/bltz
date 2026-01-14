@@ -14,21 +14,26 @@ use crate::mail::parser::{extract_attachment_data, parse_attachments};
 use crate::mail::types::EmailFlags;
 
 use super::{
-    ImapActorHandle, ImapClient, ImapCommand, ImapError, ImapEvent, SyncResult, folder_cache_key,
+    ImapActorHandle, ImapClient, ImapCommand, ImapConnectionPool, ImapError, ImapEvent, SyncResult,
+    folder_cache_key, parallel_sync::parallel_fetch_bodies,
 };
 
 /// Spawn the IMAP actor and return a handle to control it.
 /// The actor maintains a single connection and uses IDLE for push notifications.
+/// A connection pool is used for parallel operations like batch body fetching.
 pub fn spawn_imap_actor(
     client: ImapClient,
     cache: Arc<Cache>,
     account_id: String,
+    pool: ImapConnectionPool,
 ) -> ImapActorHandle {
     // Increased channel capacity to handle high-activity periods (large syncs, batch operations)
     let (cmd_tx, cmd_rx) = mpsc::channel(128);
     let (event_tx, event_rx) = mpsc::channel(256);
 
-    tokio::spawn(imap_actor(client, cache, account_id, cmd_rx, event_tx));
+    tokio::spawn(imap_actor(
+        client, cache, account_id, pool, cmd_rx, event_tx,
+    ));
 
     ImapActorHandle { cmd_tx, event_rx }
 }
@@ -39,6 +44,7 @@ async fn imap_actor(
     mut client: ImapClient,
     cache: Arc<Cache>,
     account_id: String,
+    pool: ImapConnectionPool,
     mut cmd_rx: mpsc::Receiver<ImapCommand>,
     event_tx: mpsc::Sender<ImapEvent>,
 ) {
@@ -247,7 +253,7 @@ async fn imap_actor(
                         break;
                     }
                     Some(cmd) => {
-                        handle_command(&mut client, &cache, &account_id, &mut current_folder, cmd, &event_tx).await;
+                        handle_command(&mut client, &cache, &account_id, &pool, &mut current_folder, cmd, &event_tx).await;
                     }
                     None => {
                         // Channel closed, shutdown
@@ -266,6 +272,7 @@ async fn handle_command(
     client: &mut ImapClient,
     cache: &Cache,
     account_id: &str,
+    pool: &ImapConnectionPool,
     current_folder: &mut String,
     cmd: ImapCommand,
     event_tx: &mpsc::Sender<ImapEvent>,
@@ -291,74 +298,75 @@ async fn handle_command(
                 return;
             }
 
-            // Save original folder for restoration after operation
-            let original_folder = current_folder.clone();
-            let needs_folder_switch = folder != *current_folder;
-
-            // Select the folder if it differs from current (needed for conversation mode)
-            if needs_folder_switch && let Err(e) = client.select_folder(&folder).await {
-                tracing::warn!("Failed to select folder '{}' for body fetch: {}", folder, e);
-                event_tx
-                    .send(ImapEvent::BodyFetchFailed {
-                        uid,
-                        error: format!("Failed to select folder: {}", e),
-                    })
-                    .await
-                    .ok();
-                return;
-            }
-
-            // Fetch from server
-            match client.fetch_body(uid).await {
-                Ok(body) => {
-                    // Cache the body with folder-specific key
-                    if let Err(e) = cache.insert_email_body(&body_cache_key, uid, &body).await {
-                        tracing::warn!("Failed to cache email body for UID {}: {}", uid, e);
+            // Use a pooled connection for single body fetch to avoid IDLE interruption overhead
+            // This keeps the main client free for IDLE while fetching the body in parallel
+            match pool.borrow().await {
+                Ok(mut pooled_client) => {
+                    // Select folder and fetch
+                    let result = async {
+                        pooled_client.select_folder(&folder).await?;
+                        pooled_client.fetch_body(uid).await
                     }
-                    if let Err(e) = event_tx
-                        .send(ImapEvent::BodyFetched {
-                            uid,
-                            folder: folder.clone(),
-                            body,
-                        })
-                        .await
-                    {
-                        tracing::debug!("Failed to send BodyFetched event: {}", e);
+                    .await;
+
+                    match result {
+                        Ok(body) => {
+                            // Cache the body with folder-specific key
+                            if let Err(e) =
+                                cache.insert_email_body(&body_cache_key, uid, &body).await
+                            {
+                                tracing::warn!("Failed to cache email body for UID {}: {}", uid, e);
+                            }
+                            if let Err(e) = event_tx
+                                .send(ImapEvent::BodyFetched {
+                                    uid,
+                                    folder: folder.clone(),
+                                    body,
+                                })
+                                .await
+                            {
+                                tracing::debug!("Failed to send BodyFetched event: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            event_tx
+                                .send(ImapEvent::BodyFetchFailed {
+                                    uid,
+                                    error: e.to_string(),
+                                })
+                                .await
+                                .ok();
+                        }
                     }
+
+                    // Return client to pool
+                    pool.return_client(pooled_client).await;
                 }
                 Err(e) => {
+                    // Pool borrow failed - send error
                     event_tx
                         .send(ImapEvent::BodyFetchFailed {
                             uid,
-                            error: e.to_string(),
+                            error: format!("Failed to get pooled connection: {}", e),
                         })
                         .await
                         .ok();
                 }
             }
-
-            // Switch back to original folder for IDLE (with recovery on failure)
-            restore_folder_after_operation(
-                client,
-                current_folder,
-                &original_folder,
-                needs_folder_switch,
-                event_tx,
-            )
-            .await;
         }
         ImapCommand::FetchBodies { uids, folder } => {
             // Use the provided folder for cache key
             let body_cache_key = folder_cache_key(account_id, &folder);
 
-            // Filter out UIDs already in cache
+            // Filter out UIDs already in cache (use HashSet for O(1) lookups)
             let cached_uids = cache
                 .get_cached_body_uids(&body_cache_key, &uids)
                 .await
                 .unwrap_or_default();
+            let cached_set: std::collections::HashSet<u32> = cached_uids.iter().copied().collect();
             let uids_to_fetch: Vec<u32> = uids
                 .into_iter()
-                .filter(|uid| !cached_uids.contains(uid))
+                .filter(|uid| !cached_set.contains(uid))
                 .collect();
 
             // Send events for cached bodies immediately
@@ -375,35 +383,10 @@ async fn handle_command(
                 }
             }
 
-            // Save original folder for restoration after operation
-            let original_folder = current_folder.clone();
-            let needs_folder_switch = folder != *current_folder;
-
-            // Select the folder if it differs from current
-            if needs_folder_switch
-                && !uids_to_fetch.is_empty()
-                && let Err(e) = client.select_folder(&folder).await
-            {
-                tracing::warn!(
-                    "Failed to select folder '{}' for batch body fetch: {}",
-                    folder,
-                    e
-                );
-                for uid in uids_to_fetch {
-                    event_tx
-                        .send(ImapEvent::BodyFetchFailed {
-                            uid,
-                            error: format!("Failed to select folder: {}", e),
-                        })
-                        .await
-                        .ok();
-                }
-                return;
-            }
-
-            // Fetch remaining bodies from server in a single batch request
+            // Fetch remaining bodies from server using pooled parallel connections
+            // This uses the connection pool, so main client stays on current folder for IDLE
             if !uids_to_fetch.is_empty() {
-                match client.fetch_bodies(&uids_to_fetch).await {
+                match parallel_fetch_bodies(pool, &folder, uids_to_fetch.clone()).await {
                     Ok(fetched) => {
                         for (uid, body) in fetched {
                             // Cache each body
@@ -438,16 +421,6 @@ async fn handle_command(
                     }
                 }
             }
-
-            // Switch back to original folder for IDLE (with recovery on failure)
-            restore_folder_after_operation(
-                client,
-                current_folder,
-                &original_folder,
-                needs_folder_switch,
-                event_tx,
-            )
-            .await;
         }
         ImapCommand::SetFlag { uid, flag, folder } => {
             // Use folder-specific cache key (important for conversation mode)

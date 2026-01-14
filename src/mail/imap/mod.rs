@@ -10,6 +10,9 @@ mod actor;
 mod client;
 mod monitor;
 pub(crate) mod parallel_sync;
+mod pool;
+
+pub use pool::ImapConnectionPool;
 
 use thiserror::Error;
 

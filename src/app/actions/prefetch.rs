@@ -1,6 +1,7 @@
 //! Email body prefetching
 
 use std::collections::HashSet;
+use std::collections::hash_map::Entry;
 use std::time::{Duration, Instant};
 
 use crate::app::state::View;
@@ -46,38 +47,55 @@ impl App {
             // Only clear if not in cache - avoids flash of empty content
             self.state.reader.set_body(None);
 
-            // If current email is from a different folder (e.g., Sent in conversation mode),
-            // fetch it directly since batch prefetch only handles current folder
+            // Spawn background task to fetch body (non-blocking)
+            // This allows the UI to remain responsive while fetching
             if let Some(ref email) = current_email {
                 let email_folder = email
                     .folder
                     .clone()
                     .unwrap_or_else(|| self.state.folder.current.clone());
-                if email_folder != self.state.folder.current
-                    && !self.prefetch.in_flight.contains(&current_uid)
-                {
-                    // Fetch this email's body directly
-                    // Only mark as in-flight if send succeeds to avoid stuck UIDs
-                    match self.accounts.active().imap_handle.cmd_tx.try_send(
-                        ImapCommand::FetchBody {
-                            uid: current_uid,
-                            folder: email_folder,
-                        },
-                    ) {
-                        Ok(_) => {
-                            // Don't set loading for background prefetch - it should be invisible
-                            self.prefetch.in_flight.insert(current_uid);
+                if let Entry::Vacant(entry) = self.prefetch.in_flight.entry(current_uid) {
+                    entry.insert(Instant::now());
+
+                    // Clone what we need for the spawned task
+                    let pool = self.accounts.active().pool.clone();
+                    let result_tx = self.body_fetch_tx.clone();
+                    let folder = email_folder.clone();
+                    let cache_key = email_cache_key.clone();
+                    let uid = current_uid;
+
+                    // Spawn background task - does NOT block UI
+                    tokio::spawn(async move {
+                        let result = async {
+                            let mut client = pool.borrow().await?;
+                            // Inner block ensures client is always returned after successful borrow
+                            let fetch_result = async {
+                                client.select_folder(&folder).await?;
+                                client.fetch_body(uid).await
+                            }
+                            .await;
+                            pool.return_client(client).await; // Always return after borrow
+                            fetch_result
                         }
-                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                        .await;
+
+                        // Send result back to main thread
+                        if let Err(e) = result_tx
+                            .send(crate::app::BodyFetchResult {
+                                uid,
+                                folder,
+                                cache_key,
+                                result: result.map_err(|e: anyhow::Error| e.to_string()),
+                            })
+                            .await
+                        {
                             tracing::warn!(
-                                "IMAP command queue full, skipping prefetch for uid {}",
-                                current_uid
+                                "Failed to send body fetch result for uid {}: {}",
+                                uid,
+                                e
                             );
                         }
-                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                            tracing::error!("IMAP actor disconnected");
-                        }
-                    }
+                    });
                 }
             }
         }
@@ -90,7 +108,7 @@ impl App {
         // Filter out UIDs that are in-flight first
         let candidate_uids: Vec<u32> = all_uids
             .into_iter()
-            .filter(|uid| !self.prefetch.in_flight.contains(uid))
+            .filter(|uid| !self.prefetch.in_flight.contains_key(uid))
             .collect();
 
         // Batch check cache for all candidates (single query instead of N queries)
@@ -194,9 +212,10 @@ impl App {
                     folder: current_folder.clone(),
                 }) {
                 Ok(_) => {
-                    // Track all UIDs as in-flight
+                    // Track all UIDs as in-flight with current timestamp
+                    let now = Instant::now();
                     for uid in uids_to_fetch {
-                        self.prefetch.in_flight.insert(uid);
+                        self.prefetch.in_flight.insert(uid, now);
                     }
                 }
                 Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
@@ -215,5 +234,72 @@ impl App {
         if let Some(uid) = current_uid {
             self.prefetch.last_uid = Some(uid);
         }
+    }
+
+    /// Process body fetch results from background tasks (non-blocking)
+    /// Returns true if any results were processed
+    pub(crate) async fn process_body_fetch_results(&mut self) -> bool {
+        const IN_FLIGHT_TIMEOUT_SECS: u64 = 30;
+
+        let mut processed = false;
+
+        // Evict stale in-flight entries (> 30 seconds old) to prevent unbounded growth
+        let now = Instant::now();
+        self.prefetch.in_flight.retain(|uid, added_at| {
+            let is_stale =
+                now.duration_since(*added_at) > Duration::from_secs(IN_FLIGHT_TIMEOUT_SECS);
+            if is_stale {
+                tracing::debug!("Evicting stale in-flight uid {} (timed out)", uid);
+            }
+            !is_stale
+        });
+
+        // Process all available results (non-blocking)
+        while let Ok(result) = self.body_fetch_rx.try_recv() {
+            processed = true;
+
+            // Remove from in-flight tracking
+            self.prefetch.in_flight.remove(&result.uid);
+
+            match result.result {
+                Ok(body) => {
+                    // Cache the body for future use
+                    if let Err(e) = self
+                        .cache
+                        .insert_email_body(&result.cache_key, result.uid, &body)
+                        .await
+                    {
+                        tracing::warn!("Failed to cache body for uid {}: {}", result.uid, e);
+                    }
+
+                    // Check if this is the currently selected email with folder verification
+                    // In conversation mode, same UID can exist in both INBOX and Sent folder
+                    let current_email = self.state.current_email_from_thread();
+                    let should_display = current_email
+                        .map(|e| {
+                            e.uid == result.uid
+                                && (e.folder.as_deref() == Some(&result.folder)
+                                    || (e.folder.is_none()
+                                        && result.folder == self.state.folder.current))
+                        })
+                        .unwrap_or(false);
+
+                    if should_display && self.state.reader.body.is_none() {
+                        self.state.reader.set_body(Some(body));
+                        self.prefetch.last_uid = Some(result.uid);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to fetch body for uid {} in {}: {}",
+                        result.uid,
+                        result.folder,
+                        e
+                    );
+                }
+            }
+        }
+
+        processed
     }
 }

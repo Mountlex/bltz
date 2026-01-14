@@ -356,7 +356,7 @@ fn default_sync_interval_secs() -> u64 {
 }
 
 fn default_prefetch_radius() -> usize {
-    2
+    10
 }
 
 impl Config {

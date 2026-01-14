@@ -4,7 +4,9 @@ use std::sync::Arc;
 use crate::cache::Cache;
 use crate::config::{AccountConfig, AuthMethod, Config};
 use crate::credentials::CredentialStore;
-use crate::mail::{ImapClient, ImapCommand, ImapEvent, spawn_folder_monitor, spawn_imap_actor};
+use crate::mail::{
+    ImapClient, ImapCommand, ImapConnectionPool, ImapEvent, spawn_folder_monitor, spawn_imap_actor,
+};
 
 use super::AccountHandle;
 
@@ -82,18 +84,25 @@ impl AccountManager {
     /// Spawn a single account's IMAP actor
     async fn spawn_account(config: AccountConfig, cache: Arc<Cache>) -> Result<AccountHandle> {
         let password = Self::get_credentials(&config).await?;
+        let username = config.username_or_email().to_string();
 
         let imap_client = ImapClient::new(
             config.imap.clone(),
-            config.username_or_email().to_string(),
-            password,
+            username.clone(),
+            password.clone(),
             config.auth.clone(),
         );
 
-        let account_id = config.email.clone();
-        let imap_handle = spawn_imap_actor(imap_client, cache, account_id);
+        // Create a connection pool for parallel operations (body fetching)
+        // The pool is shared between the actor (for batch fetches) and AccountHandle (for direct fetches)
+        let pool =
+            ImapConnectionPool::new(config.imap.clone(), username, password, config.auth.clone());
 
-        Ok(AccountHandle::new(config, imap_handle))
+        let account_id = config.email.clone();
+        // Clone pool - it uses Arc internally so both actor and handle share the same connections
+        let imap_handle = spawn_imap_actor(imap_client, cache, account_id, pool.clone());
+
+        Ok(AccountHandle::new(config, imap_handle, pool))
     }
 
     /// Spawn a folder monitor for a specific account

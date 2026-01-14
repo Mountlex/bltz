@@ -1,7 +1,10 @@
 use std::time::Instant;
 
+use anyhow::Result;
+
 use crate::config::AccountConfig;
-use crate::mail::{FolderMonitorHandle, ImapActorHandle};
+use crate::mail::types::EmailBody;
+use crate::mail::{FolderMonitorHandle, ImapActorHandle, ImapConnectionPool};
 
 /// Per-account state and handles
 #[allow(dead_code)]
@@ -10,6 +13,8 @@ pub struct AccountHandle {
     pub config: AccountConfig,
     /// IMAP actor handle for this account (main actor - handles commands + IDLE on current folder)
     pub imap_handle: ImapActorHandle,
+    /// Connection pool for direct body fetching (bypasses actor/IDLE)
+    pub pool: ImapConnectionPool,
     /// Optional folder monitors for multi-folder IDLE (e.g., Sent folder)
     pub folder_monitors: Vec<FolderMonitorHandle>,
     /// Account identifier (email address)
@@ -31,11 +36,16 @@ pub struct AccountHandle {
 }
 
 impl AccountHandle {
-    pub fn new(config: AccountConfig, imap_handle: ImapActorHandle) -> Self {
+    pub fn new(
+        config: AccountConfig,
+        imap_handle: ImapActorHandle,
+        pool: ImapConnectionPool,
+    ) -> Self {
         let account_id = config.email.clone();
         Self {
             config,
             imap_handle,
+            pool,
             folder_monitors: Vec::new(),
             account_id,
             connected: false,
@@ -53,12 +63,14 @@ impl AccountHandle {
     pub fn with_monitors(
         config: AccountConfig,
         imap_handle: ImapActorHandle,
+        pool: ImapConnectionPool,
         folder_monitors: Vec<FolderMonitorHandle>,
     ) -> Self {
         let account_id = config.email.clone();
         Self {
             config,
             imap_handle,
+            pool,
             folder_monitors,
             account_id,
             connected: false,
@@ -69,6 +81,21 @@ impl AccountHandle {
             last_error: None,
             folder_list: Vec::new(),
         }
+    }
+
+    /// Fetch an email body directly using the connection pool.
+    /// This bypasses the IMAP actor to avoid IDLE interruption overhead.
+    #[allow(dead_code)]
+    pub async fn fetch_body_direct(&self, folder: &str, uid: u32) -> Result<EmailBody> {
+        let mut client = self.pool.borrow().await?;
+        // Inner block ensures client is always returned after successful borrow
+        let result = async {
+            client.select_folder(folder).await?;
+            client.fetch_body(uid).await
+        }
+        .await;
+        self.pool.return_client(client).await; // Always return after borrow
+        result
     }
 
     /// Shutdown folder monitors

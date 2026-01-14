@@ -8,10 +8,12 @@ pub mod state;
 pub mod undo;
 
 use anyhow::Result;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::mpsc;
 
+use crate::mail::types::EmailBody;
 use render_thread::RenderThread;
 
 use crate::account::AccountManager;
@@ -81,8 +83,9 @@ pub struct PrefetchState {
     /// Pending prefetch: (uids, when_requested) - for debouncing rapid navigation
     /// First UID is the current selection; remaining are nearby emails
     pub pending: Option<(Vec<u32>, Instant)>,
-    /// UIDs currently being fetched (prevents duplicate requests)
-    pub in_flight: HashSet<u32>,
+    /// UIDs currently being fetched, with timestamp when fetch started.
+    /// Tracks when each fetch was initiated for timeout cleanup.
+    pub in_flight: HashMap<u32, Instant>,
     /// Whether we've done initial folder prefetch (after first INBOX sync)
     pub folder_done: bool,
     /// Whether folder prefetch is pending (waiting for folder list)
@@ -98,6 +101,14 @@ impl PrefetchState {
     }
 }
 
+/// Result of a background body fetch operation
+pub struct BodyFetchResult {
+    pub uid: u32,
+    pub folder: String,
+    pub cache_key: String,
+    pub result: Result<EmailBody, String>,
+}
+
 pub struct App {
     pub(crate) config: Config,
     pub(crate) cache: Arc<Cache>,
@@ -109,6 +120,10 @@ pub struct App {
     pub(crate) startup: StartupState,
     /// Email body prefetching state
     pub(crate) prefetch: PrefetchState,
+    /// Channel for receiving body fetch results from background tasks
+    pub(crate) body_fetch_rx: mpsc::Receiver<BodyFetchResult>,
+    /// Sender for body fetch results (cloned to spawned tasks)
+    pub(crate) body_fetch_tx: mpsc::Sender<BodyFetchResult>,
     /// Stack of undoable actions (most recent first)
     pub(crate) undo_stack: Vec<UndoEntry>,
     /// Pending deletions waiting to be executed (delayed by 10 seconds)
@@ -215,6 +230,9 @@ impl App {
             None
         };
 
+        // Create channel for body fetch results from background tasks
+        let (body_fetch_tx, body_fetch_rx) = mpsc::channel(64);
+
         let mut app = Self {
             config,
             cache,
@@ -224,6 +242,8 @@ impl App {
             bindings,
             startup: StartupState::default(),
             prefetch: PrefetchState::default(),
+            body_fetch_rx,
+            body_fetch_tx,
             undo_stack: Vec::new(),
             pending_deletions: Vec::new(),
             last_search_input: None,
